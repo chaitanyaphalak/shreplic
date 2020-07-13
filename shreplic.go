@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	binidl "github.com/efficient/gobin-codegen/src/binidl"
+	"go/build"
 	"go/parser"
 	"go/printer"
 	"go/token"
@@ -313,7 +314,19 @@ func path() string {
 	if err != nil {
 		log.Fatal(err)
 	}
-	return filepath.Dir(bin)
+	dir := filepath.Dir(bin)
+	if _, err := os.Stat(dir + "/user/"); os.IsNotExist(err) {
+		gopath := os.Getenv("GOPATH")
+		if gopath == "" {
+			gopath = build.Default.GOPATH
+		}
+		dir = gopath + "src/github.com/vonaka/shreplic"
+		if _, err := os.Stat(dir + "/user/"); os.IsNotExist(err) {
+			log.Fatal("can't find shreplic source")
+		}
+	}
+
+	return dir
 }
 
 func execAndOutToString(f func()) string {
