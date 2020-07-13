@@ -1,9 +1,15 @@
 shreplic
 ========
 
-Shreplic is a framework that simplifies the implementation of broadcast protocols for SMR-replication in message-passing systems where any minority of processes can fail by crashing. Based on message definitions it automatically generates *"boring"* communication and marshaling code and embeds it in the main application.
+Shreplic is a framework that simplifies the implementation of
+broadcast protocols for SMR-replication in message-passing systems
+where any minority of processes can fail by crashing. Based on message
+definitions it automatically generates *"boring"* communication and
+marshaling code and embeds it in the main application.
 
-Originally fork of [Pierre Sutra's fork][otrack] of [epaxos], shreplic improves on both of its predecessors by fixing several bugs and adding new protocols and functionality.
+Originally fork of [Pierre Sutra's fork][otrack] of [epaxos], shreplic
+improves on both of its predecessors by fixing several bugs and adding
+new protocols and functionality.
 
 Installation
 ------------
@@ -25,7 +31,9 @@ Supported protocols
 Add new protocol
 ----------------
 
-To add a new protocol named `shmaxos`, first create a go file with the message definitions, let's call it `def.go`. Each message is a go structure, which name starts with a capital `M`:
+To add a new protocol named `shmaxos`, first create a go file with the
+message definitions, let's call it `def.go`. Each message is a go
+structure, which name starts with a capital `M`:
 
 ```go
 package shmaxos
@@ -63,7 +71,8 @@ After editing `shmaxos.go` run `make` or `make install`.
 Usage
 -----
 
-First start master, which coordinates communications between clients and (in this case three) servers:
+First start master, which coordinates communications between clients
+and (in this case three) servers:
 
     shr-master -N 3
 
