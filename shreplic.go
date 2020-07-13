@@ -316,23 +316,17 @@ func path() string {
 	}
 	dir := filepath.Dir(bin)
 
-	if _, err := os.Stat(dir + "/user/"); os.IsNotExist(err) {
-		err := os.Mkdir(dir + "/user/", os.ModePerm)
-		if err != nil {
-			gopath := os.Getenv("GOPATH")
-			if gopath == "" {
-				gopath = build.Default.GOPATH
-			}
-			dir = gopath + "src/github.com/vonaka/shreplic"
-			if _, err := os.Stat(dir + "/user/"); os.IsNotExist(err) {
-				err := os.Mkdir(dir + "/user/", os.ModePerm)
-				if err != nil {
-					log.Fatal("can't find shreplic source")
-				}
-			}
+	if _, err := os.Stat(dir + "/shreplic.go"); os.IsNotExist(err) {
+		gopath := os.Getenv("GOPATH")
+		if gopath == "" {
+			gopath = build.Default.GOPATH
+		}
+		dir = gopath + "src/github.com/vonaka/shreplic"
+		if _, err := os.Stat(dir + "/shreplic.go"); os.IsNotExist(err) {
+			log.Fatal("can't find shreplic source")
 		}
 	}
-
+	os.Mkdir(dir + "/user/", os.ModePerm)
 	return dir
 }
 
