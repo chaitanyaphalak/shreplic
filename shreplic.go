@@ -321,7 +321,7 @@ func path() string {
 		if gopath == "" {
 			gopath = build.Default.GOPATH
 		}
-		dir = gopath + "src/github.com/vonaka/shreplic"
+		dir = gopath + "/src/github.com/vonaka/shreplic"
 		if _, err := os.Stat(dir + "/shreplic.go"); os.IsNotExist(err) {
 			log.Fatal("can't find shreplic source")
 		}
