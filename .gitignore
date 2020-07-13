@@ -1,0 +1,5 @@
+storage/
+bin/
+user/
+shreplic
+*.DS_Store
