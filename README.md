@@ -16,6 +16,7 @@ Installation
 
     go get github.com/vonaka/shreplic
     go install github.com/vonaka/shreplic
+    shreplic -i
 
 Supported protocols
 -------------------
@@ -66,7 +67,7 @@ This will generate the following tree:
     ├── proto.go
     └── shmaxos.go
 
-After editing `shmaxos.go` run `make` or `make install`.
+After editing `shmaxos.go` run `shreplic -i`.
 
 Usage
 -----

@@ -13,6 +13,7 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 )
@@ -22,12 +23,13 @@ var (
 	msgFlow = flag.String("msg", "", "Go file with message definitions")
 	shpath  = flag.String("dir", "", "Path to the shreplic root")
 	remove  = flag.Bool("rm", false, "Remove the protocol")
+	install = flag.Bool("i", false, "Install master, servers and clients")
 )
 
 func main() {
 	flag.Parse()
 
-	if *pname == "" {
+	if *pname == "" && !*install {
 		if !*remove {
 			fmt.Println("cannot initialize nameless protocol")
 		} else {
@@ -36,12 +38,12 @@ func main() {
 		return
 	}
 
-	if *msgFlow == "" && !*remove {
+	if *msgFlow == "" && !*remove && !*install {
 		fmt.Println("please provide a message definition source file")
 		return
 	}
 
-	if _, err := os.Stat(*msgFlow); os.IsNotExist(err) {
+	if _, err := os.Stat(*msgFlow); !*install && os.IsNotExist(err) {
 		fmt.Printf("%s: no such file\n", *msgFlow)
 		return
 	}
@@ -57,6 +59,17 @@ func main() {
 		protoFile   = *shpath + "/user/" + *pname + "/proto.go"
 		replicaFile = *shpath + "/user/" + *pname + "/" + *pname + ".go"
 	)
+
+	if *install {
+		make := exec.Command("make", "-C", *shpath, "install")
+		err := make.Run()
+		if err != nil {
+			fmt.Println(err)
+		} else {
+			fmt.Println("shr-master, shr-server and shr-client are successfully installed")
+		}
+		return
+	}
 
 	if *remove {
 		err := removeProtocol(protocolDir,
@@ -139,7 +152,7 @@ func main() {
 	}
 
 	fmt.Println(*pname, "is successfully initialized")
-	fmt.Println("check", protocolDir, "for the associated source files")
+	fmt.Println("check", *pname, "for the associated source files")
 }
 
 func protocol(name string, msgs []string) string {
@@ -326,7 +339,7 @@ func path() string {
 			log.Fatal("can't find shreplic source")
 		}
 	}
-	os.Mkdir(dir + "/user/", os.ModePerm)
+	os.Mkdir(dir+"/user/", os.ModePerm)
 	return dir
 }
 
