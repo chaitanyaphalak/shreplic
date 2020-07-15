@@ -77,7 +77,7 @@ var (
 	StoreFilname = "stable_store"
 )
 
-func NewReplica(id, f int, addrs []string, thrifty, exec, lread, drep bool) *Replica {
+func NewReplica(id, f int, addrs []string, thrifty, exec, lread, drep bool, ps map[string]struct{}) *Replica {
 	n := len(addrs)
 	r := &Replica{
 		N:  n,
@@ -89,7 +89,7 @@ func NewReplica(id, f int, addrs []string, thrifty, exec, lread, drep bool) *Rep
 		PeerReaders:        make([]*bufio.Reader, n),
 		PeerWriters:        make([]*bufio.Writer, n),
 		ClientWriters:      make(map[int32]*bufio.Writer),
-		ProxyAddrs:         make(map[string]struct{}),
+		ProxyAddrs:         ps,
 		Alive:              make([]bool, n),
 		PreferredPeerOrder: make([]int32, n),
 

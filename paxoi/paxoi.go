@@ -101,11 +101,11 @@ type CommunicationSupply struct {
 	collectRPC      uint8
 }
 
-func NewReplica(rid int, addrs []string, exec, dr bool, pl, f int, qfile string) *Replica {
+func NewReplica(rid int, addrs []string, exec, dr bool, pl, f int, qfile string, ps map[string]struct{}) *Replica {
 	cmap.SHARD_COUNT = 32768
 
 	r := &Replica{
-		Replica: smr.NewReplica(rid, f, addrs, false, exec, false, dr),
+		Replica: smr.NewReplica(rid, f, addrs, false, exec, false, dr, ps),
 
 		ballot:  0,
 		cballot: 0,

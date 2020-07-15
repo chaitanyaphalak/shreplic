@@ -75,8 +75,8 @@ type LeaderBookkeeping struct {
 	lastTriedBallot int32
 }
 
-func NewReplica(id int, peerAddrList []string, Isleader bool, thrifty bool, exec bool, lread bool, dreply bool, durable bool, batchWait int, f int) *Replica {
-	r := &Replica{smr.NewReplica(id, f, peerAddrList, thrifty, exec, lread, dreply),
+func NewReplica(id int, peerAddrList []string, Isleader bool, thrifty bool, exec bool, lread bool, dreply bool, durable bool, batchWait int, f int, ps map[string]struct{}) *Replica {
+	r := &Replica{smr.NewReplica(id, f, peerAddrList, thrifty, exec, lread, dreply, ps),
 		make(chan fastrpc.Serializable, smr.CHAN_BUFFER_SIZE),
 		make(chan fastrpc.Serializable, smr.CHAN_BUFFER_SIZE),
 		make(chan fastrpc.Serializable, smr.CHAN_BUFFER_SIZE),

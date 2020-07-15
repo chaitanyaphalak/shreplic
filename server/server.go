@@ -88,20 +88,20 @@ func main() {
 	if *doEpaxos {
 		log.Println("Starting Egalitarian Paxos replica...")
 		rep := epaxos.NewReplica(replicaId, nodeList, *thrifty, *exec, *lread,
-			*dreply, *beacon, *durable, *batchWait, *tConf, *maxfailures)
+			*dreply, *beacon, *durable, *batchWait, *tConf, *maxfailures, ps)
 		rpc.Register(rep)
 	} else if *doPaxoi {
 		log.Println("Starting Paxoi replica...")
 		paxoi.MaxDescRoutines = *descNum
 		rep := paxoi.NewReplica(replicaId, nodeList, *exec,
-			*dreply, *poolLevel, *maxfailures, *qfile)
+			*dreply, *poolLevel, *maxfailures, *qfile, ps)
 		rpc.Register(rep)
 	} else if *doOptpaxos {
 		log.Println("Starting n²Paxos replica...")
 	} else {
 		log.Println("Starting Paxos replica...")
 		rep := paxos.NewReplica(replicaId, nodeList, isLeader, *thrifty, *exec,
-			*lread, *dreply, *durable, *batchWait, *maxfailures)
+			*lread, *dreply, *durable, *batchWait, *maxfailures, ps)
 		rpc.Register(rep)
 	}
 

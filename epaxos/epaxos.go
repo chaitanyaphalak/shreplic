@@ -118,9 +118,9 @@ type LeaderBookkeeping struct {
 	leaderResponded   bool
 }
 
-func NewReplica(id int, peerAddrList []string, thrifty bool, exec bool, lread bool, dreply bool, beacon bool, durable bool, batchWait int, transconf bool, failures int) *Replica {
+func NewReplica(id int, peerAddrList []string, thrifty bool, exec bool, lread bool, dreply bool, beacon bool, durable bool, batchWait int, transconf bool, failures int, ps map[string]struct{}) *Replica {
 	r := &Replica{
-		smr.NewReplica(id, failures, peerAddrList, thrifty, exec, lread, dreply),
+		smr.NewReplica(id, failures, peerAddrList, thrifty, exec, lread, dreply, ps),
 		make(chan fastrpc.Serializable, smr.CHAN_BUFFER_SIZE),
 		make(chan fastrpc.Serializable, smr.CHAN_BUFFER_SIZE),
 		make(chan fastrpc.Serializable, smr.CHAN_BUFFER_SIZE),

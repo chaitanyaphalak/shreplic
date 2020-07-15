@@ -182,10 +182,10 @@ func protocol(name string, msgs []string) string {
 	p = p + "}\n\n"
 
 	p = p + "func NewReplica"
-	p = p + "(id, f int, addrs []string, thrifty, exec, lread, drep bool, args string)"
+	p = p + "(id, f int, addrs []string, thrifty, exec, lread, drep bool, args string, ps map[string]struct{})"
 	p = p + " *Replica {\n"
 	p = p + "r := &Replica{\n"
-	p = p + "Replica: smr.NewReplica(id, f, addrs, thrifty, exec, lread, drep),\n\n"
+	p = p + "Replica: smr.NewReplica(id, f, addrs, thrifty, exec, lread, drep, ps),\n\n"
 	p = p + "//...\n\n"
 	p = p + "cs: CommunicationSupply{\n"
 	p = p + "maxLatency: 0,\n\n"
@@ -275,7 +275,7 @@ func updateServer(filename, pname string, remove bool) error {
 	calln = calln + "\t\tlog.Println(\"Starting " + pname + " replica...\")\n"
 	calln = calln + "\t\trep := " + pname +
 		".NewReplica(replicaId, *maxfailures, nodeList, " +
-		"*thrifty, *exec, *lread, *dreply, *args)\n"
+		"*thrifty, *exec, *lread, *dreply, *args, ps)\n"
 	calln = calln + "\t\trpc.Register(rep)\n"
 	call := calln + "\t} else if *doPaxoi {"
 	if !remove {
