@@ -1,8 +1,8 @@
 package paxoi
 
 import (
-	"log"
 	"flag"
+	"log"
 	"strings"
 
 	"github.com/vonaka/shreplic/client/base"
