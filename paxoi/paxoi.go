@@ -11,7 +11,6 @@ import (
 	"github.com/vonaka/shreplic/state"
 	"github.com/vonaka/shreplic/tools"
 	"github.com/vonaka/shreplic/tools/dlog"
-	"github.com/vonaka/shreplic/tools/fastrpc"
 )
 
 type Replica struct {
@@ -73,34 +72,6 @@ type commandStaticDesc struct {
 	defered  func()
 }
 
-type CommunicationSupply struct {
-	maxLatency time.Duration
-
-	fastAckChan      chan fastrpc.Serializable
-	slowAckChan      chan fastrpc.Serializable
-	lightSlowAckChan chan fastrpc.Serializable
-	acksChan         chan fastrpc.Serializable
-	optAcksChan      chan fastrpc.Serializable
-	newLeaderChan    chan fastrpc.Serializable
-	newLeaderAckChan chan fastrpc.Serializable
-	syncChan         chan fastrpc.Serializable
-	syncAckChan      chan fastrpc.Serializable
-	flushChan        chan fastrpc.Serializable
-	collectChan      chan fastrpc.Serializable
-
-	fastAckRPC      uint8
-	slowAckRPC      uint8
-	lightSlowAckRPC uint8
-	acksRPC         uint8
-	optAcksRPC      uint8
-	newLeaderRPC    uint8
-	newLeaderAckRPC uint8
-	syncRPC         uint8
-	syncAckRPC      uint8
-	flushRPC        uint8
-	collectRPC      uint8
-}
-
 func NewReplica(rid int, addrs []string, exec, dr bool, pl, f int, qfile string, ps map[string]struct{}) *Replica {
 	cmap.SHARD_COUNT = 32768
 
@@ -115,33 +86,6 @@ func NewReplica(rid int, addrs []string, exec, dr bool, pl, f int, qfile string,
 		delivered: cmap.New(),
 		history:   make([]commandStaticDesc, HISTORY_SIZE),
 		keys:      make(map[state.Key]keyInfo),
-
-		cs: CommunicationSupply{
-			maxLatency: 0,
-
-			fastAckChan: make(chan fastrpc.Serializable,
-				smr.CHAN_BUFFER_SIZE),
-			slowAckChan: make(chan fastrpc.Serializable,
-				smr.CHAN_BUFFER_SIZE),
-			lightSlowAckChan: make(chan fastrpc.Serializable,
-				smr.CHAN_BUFFER_SIZE),
-			acksChan: make(chan fastrpc.Serializable,
-				smr.CHAN_BUFFER_SIZE),
-			optAcksChan: make(chan fastrpc.Serializable,
-				smr.CHAN_BUFFER_SIZE),
-			newLeaderChan: make(chan fastrpc.Serializable,
-				smr.CHAN_BUFFER_SIZE),
-			newLeaderAckChan: make(chan fastrpc.Serializable,
-				smr.CHAN_BUFFER_SIZE),
-			syncChan: make(chan fastrpc.Serializable,
-				smr.CHAN_BUFFER_SIZE),
-			syncAckChan: make(chan fastrpc.Serializable,
-				smr.CHAN_BUFFER_SIZE),
-			flushChan: make(chan fastrpc.Serializable,
-				smr.CHAN_BUFFER_SIZE),
-			collectChan: make(chan fastrpc.Serializable,
-				smr.CHAN_BUFFER_SIZE),
-		},
 
 		deliverChan: make(chan CommandId, smr.CHAN_BUFFER_SIZE),
 
@@ -173,28 +117,7 @@ func NewReplica(rid int, addrs []string, exec, dr bool, pl, f int, qfile string,
 		log.Fatal(err)
 	}
 
-	r.cs.fastAckRPC =
-		r.RPC.Register(new(MFastAck), r.cs.fastAckChan)
-	r.cs.slowAckRPC =
-		r.RPC.Register(new(MSlowAck), r.cs.slowAckChan)
-	r.cs.lightSlowAckRPC =
-		r.RPC.Register(new(MLightSlowAck), r.cs.lightSlowAckChan)
-	r.cs.acksRPC =
-		r.RPC.Register(new(MAcks), r.cs.acksChan)
-	r.cs.optAcksRPC =
-		r.RPC.Register(new(MOptAcks), r.cs.optAcksChan)
-	r.cs.newLeaderRPC =
-		r.RPC.Register(new(MNewLeader), r.cs.newLeaderChan)
-	r.cs.newLeaderAckRPC =
-		r.RPC.Register(new(MNewLeaderAck), r.cs.newLeaderAckChan)
-	r.cs.syncRPC =
-		r.RPC.Register(new(MSync), r.cs.syncChan)
-	r.cs.syncAckRPC =
-		r.RPC.Register(new(MSyncAck), r.cs.syncAckChan)
-	r.cs.flushRPC =
-		r.RPC.Register(new(MFlush), r.cs.flushChan)
-	r.cs.collectRPC =
-		r.RPC.Register(new(MCollect), r.cs.collectChan)
+	initCs(&r.cs, r.RPC)
 
 	tools.HookUser1(func() {
 		totalNum := 0

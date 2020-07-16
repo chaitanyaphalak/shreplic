@@ -7,6 +7,25 @@ import (
 	"strings"
 )
 
+type QuorumI interface {
+	Size() int
+	Contains(int32) bool
+}
+
+type Majority int
+
+func NewMajorityOf(N int) Majority {
+	return Majority(N/2+1)
+}
+
+func (m Majority) Size() int {
+	return int(m)
+}
+
+func (m Majority) Contains(int32) bool {
+	return true
+}
+
 type Quorum map[int32]struct{}
 
 type QuorumsOfLeader map[int32]Quorum
@@ -71,6 +90,10 @@ func NewQuorumFromFile(qfile string, r *Replica) (Quorum, int32, error) {
 	}
 
 	return AQ, leader, s.Err()
+}
+
+func (q Quorum) Size() int {
+	return len(q)
 }
 
 func (q Quorum) Contains(repId int32) bool {

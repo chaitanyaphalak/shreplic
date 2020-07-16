@@ -16,6 +16,8 @@ import (
 type SimpleClient struct {
 	*Client
 
+	WaitResponse func() error
+
 	reqNum   int
 	writes   int
 	psize    int
@@ -29,6 +31,8 @@ func NewSimpleClient(maddr, collocated string,
 	rand.Seed(time.Now().UnixNano())
 	sc := &SimpleClient{
 		Client: NewClientWithLog(maddr, mport, fast, lread, leaderless, verbose, logger),
+
+		WaitResponse: nil,
 
 		reqNum:   reqNum,
 		writes:   writes,
@@ -77,15 +81,22 @@ func (c *SimpleClient) Run() error {
 			}
 		}(i)
 		<-c.Waiting
-		var err error
-		if c.Fast {
-			err = c.waitReplies(c.CollocatedId, c.Seqnum)
+		if c.WaitResponse != nil {
+			err := c.WaitResponse()
+			if err != nil {
+				return err
+			}
 		} else {
-			err = c.waitReplies(c.LastSubmitter, c.Seqnum)
-		}
-		if err != nil {
-			c.Disconnect()
-			return err
+			var err error
+			if c.Fast {
+				err = c.waitReplies(c.CollocatedId, c.Seqnum)
+			} else {
+				err = c.waitReplies(c.LastSubmitter, c.Seqnum)
+			}
+			if err != nil {
+				c.Disconnect()
+				return err
+			}
 		}
 		after := time.Now()
 

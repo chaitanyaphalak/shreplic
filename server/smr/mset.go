@@ -3,7 +3,7 @@ package smr
 type MsgSetHandler func(interface{}, []interface{})
 
 type MsgSet struct {
-	q         Quorum
+	q         QuorumI
 	msgs      []interface{}
 	leaderMsg interface{}
 	accept    func(interface{}, interface{}) bool
@@ -11,7 +11,7 @@ type MsgSet struct {
 	handler   MsgSetHandler
 }
 
-func NewMsgSet(q Quorum, accept func(interface{}, interface{}) bool,
+func NewMsgSet(q QuorumI, accept func(interface{}, interface{}) bool,
 	freeMsg func(interface{}), handler MsgSetHandler) *MsgSet {
 
 	return &MsgSet{
@@ -24,7 +24,7 @@ func NewMsgSet(q Quorum, accept func(interface{}, interface{}) bool,
 	}
 }
 
-func (ms *MsgSet) ReinitMsgSet(q Quorum, accept func(interface{}, interface{}) bool,
+func (ms *MsgSet) ReinitMsgSet(q QuorumI, accept func(interface{}, interface{}) bool,
 	freeMsg func(interface{}), handler MsgSetHandler) *MsgSet {
 
 	if ms == nil {
@@ -67,8 +67,8 @@ func (ms *MsgSet) Add(repId int32, isLeader bool, msg interface{}) bool {
 		ms.freeMsg(msg)
 	}
 
-	if len(ms.msgs) == len(ms.q) ||
-		(len(ms.msgs) == len(ms.q)-1 && ms.leaderMsg != nil) {
+	if len(ms.msgs) == ms.q.Size() ||
+		(len(ms.msgs) == ms.q.Size()-1 && ms.leaderMsg != nil) {
 		ms.handler(ms.leaderMsg, ms.msgs)
 	}
 
@@ -76,6 +76,9 @@ func (ms *MsgSet) Add(repId int32, isLeader bool, msg interface{}) bool {
 }
 
 func (ms *MsgSet) Free() {
+	if ms == nil {
+		return
+	}
 	if ms.leaderMsg != nil {
 		ms.freeMsg(ms.leaderMsg)
 	}

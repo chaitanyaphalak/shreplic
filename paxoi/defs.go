@@ -3,8 +3,11 @@ package paxoi
 import (
 	"encoding/binary"
 	"fmt"
+	"time"
 
+	"github.com/vonaka/shreplic/server/smr"
 	"github.com/vonaka/shreplic/state"
+	"github.com/vonaka/shreplic/tools/fastrpc"
 )
 
 // status
@@ -127,6 +130,62 @@ func keysOf(cmd state.Command) []state.Key {
 	default:
 		return []state.Key{cmd.K}
 	}
+}
+
+type CommunicationSupply struct {
+	maxLatency time.Duration
+
+	fastAckChan      chan fastrpc.Serializable
+	slowAckChan      chan fastrpc.Serializable
+	lightSlowAckChan chan fastrpc.Serializable
+	acksChan         chan fastrpc.Serializable
+	optAcksChan      chan fastrpc.Serializable
+	newLeaderChan    chan fastrpc.Serializable
+	newLeaderAckChan chan fastrpc.Serializable
+	syncChan         chan fastrpc.Serializable
+	syncAckChan      chan fastrpc.Serializable
+	flushChan        chan fastrpc.Serializable
+	collectChan      chan fastrpc.Serializable
+
+	fastAckRPC      uint8
+	slowAckRPC      uint8
+	lightSlowAckRPC uint8
+	acksRPC         uint8
+	optAcksRPC      uint8
+	newLeaderRPC    uint8
+	newLeaderAckRPC uint8
+	syncRPC         uint8
+	syncAckRPC      uint8
+	flushRPC        uint8
+	collectRPC      uint8
+}
+
+func initCs(cs *CommunicationSupply, t *fastrpc.Table) {
+	cs.maxLatency = 0
+
+	cs.fastAckChan      = make(chan fastrpc.Serializable, smr.CHAN_BUFFER_SIZE)
+	cs.slowAckChan      = make(chan fastrpc.Serializable, smr.CHAN_BUFFER_SIZE)
+	cs.lightSlowAckChan = make(chan fastrpc.Serializable, smr.CHAN_BUFFER_SIZE)
+	cs.acksChan         = make(chan fastrpc.Serializable, smr.CHAN_BUFFER_SIZE)
+	cs.optAcksChan      = make(chan fastrpc.Serializable, smr.CHAN_BUFFER_SIZE)
+	cs.newLeaderChan    = make(chan fastrpc.Serializable, smr.CHAN_BUFFER_SIZE)
+	cs.newLeaderAckChan = make(chan fastrpc.Serializable, smr.CHAN_BUFFER_SIZE)
+	cs.syncChan         = make(chan fastrpc.Serializable, smr.CHAN_BUFFER_SIZE)
+	cs.syncAckChan      = make(chan fastrpc.Serializable, smr.CHAN_BUFFER_SIZE)
+	cs.flushChan        = make(chan fastrpc.Serializable, smr.CHAN_BUFFER_SIZE)
+	cs.collectChan      = make(chan fastrpc.Serializable, smr.CHAN_BUFFER_SIZE)
+
+	cs.fastAckRPC      = t.Register(new(MFastAck), cs.fastAckChan)
+	cs.slowAckRPC      = t.Register(new(MSlowAck), cs.slowAckChan)
+	cs.lightSlowAckRPC = t.Register(new(MLightSlowAck), cs.lightSlowAckChan)
+	cs.acksRPC         = t.Register(new(MAcks), cs.acksChan)
+	cs.optAcksRPC      = t.Register(new(MOptAcks), cs.optAcksChan)
+	cs.newLeaderRPC    = t.Register(new(MNewLeader), cs.newLeaderChan)
+	cs.newLeaderAckRPC = t.Register(new(MNewLeaderAck), cs.newLeaderAckChan)
+	cs.syncRPC         = t.Register(new(MSync), cs.syncChan)
+	cs.syncAckRPC      = t.Register(new(MSyncAck), cs.syncAckChan)
+	cs.flushRPC        = t.Register(new(MFlush), cs.flushChan)
+	cs.collectRPC      = t.Register(new(MCollect), cs.collectChan)
 }
 
 type keyInfo interface {
