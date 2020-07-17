@@ -33,6 +33,7 @@ type Replica struct {
 	qs smr.QuorumSet
 	cs CommunicationSupply
 
+	optExec     bool
 	deliverChan chan CommandId
 
 	descPool     sync.Pool
@@ -72,7 +73,8 @@ type commandStaticDesc struct {
 	defered  func()
 }
 
-func NewReplica(rid int, addrs []string, exec, dr bool, pl, f int, qfile string, ps map[string]struct{}) *Replica {
+func NewReplica(rid int, addrs []string, exec, dr, optExec bool,
+	pl, f int, qfile string, ps map[string]struct{}) *Replica {
 	cmap.SHARD_COUNT = 32768
 
 	r := &Replica{
@@ -87,6 +89,7 @@ func NewReplica(rid int, addrs []string, exec, dr bool, pl, f int, qfile string,
 		history:   make([]commandStaticDesc, HISTORY_SIZE),
 		keys:      make(map[state.Key]keyInfo),
 
+		optExec:     optExec,
 		deliverChan: make(chan CommandId, smr.CHAN_BUFFER_SIZE),
 
 		poolLevel:    pl,
@@ -268,7 +271,16 @@ func (r *Replica) handlePropose(msg *smr.GPropose,
 	fastAck.Dep = desc.dep
 
 	fastAckSend := copyFastAck(fastAck)
-	r.batcher.SendFastAck(fastAckSend)
+	if !r.optExec {
+		r.batcher.SendFastAck(fastAckSend)
+	} else {
+		if r.Id == r.leader() {
+			r.batcher.SendFastAck(fastAckSend)
+			// TODO: send Reply
+		} else {
+			r.batcher.SendFastAckClient(fastAckSend, msg.ClientId)
+		}
+	}
 
 	r.handleFastAck(fastAck, desc)
 }
@@ -338,7 +350,11 @@ func (r *Replica) fastAckFromLeader(msg *MFastAck, desc *commandDesc) {
 				CmdId:   msgCmdId,
 			}
 
-			r.batcher.SendLightSlowAck(lightSlowAck)
+			if !r.optExec {
+				r.batcher.SendLightSlowAck(lightSlowAck)
+			} else {
+				r.batcher.SendLightSlowAckClient(lightSlowAck, desc.propose.ClientId)
+			}
 			r.handleLightSlowAck(lightSlowAck, desc)
 		}
 	})
