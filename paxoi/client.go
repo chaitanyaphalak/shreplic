@@ -27,8 +27,12 @@ func NewClient(maddr, collocated string, mport, reqNum, writes, psize, conflict 
 
 	// args must be of the form "-N <rep_num>"
 	f := flag.NewFlagSet("custom Paxoi arguments", flag.ExitOnError)
-	repNum := f.Int("N", 3, "Number of replicas")
+	repNum := f.Int("N", -1, "Number of replicas")
 	f.Parse(strings.Fields(args))
+	if *repNum == -1 {
+		f.Usage()
+		return nil
+	}
 
 	c := &Client{
 		SimpleClient: base.NewSimpleClient(maddr, collocated, mport, reqNum, writes,

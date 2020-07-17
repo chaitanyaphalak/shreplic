@@ -57,6 +57,9 @@ func runSimpleClient(i int) {
 	if *paxoiClient {
 		c := paxoi.NewClient(*maddr, *collocatedWith, *mport, *reqNum, *writes,
 			*psize, *conflicts, *fast, *lread, *noLeader, *verbose, l, *args)
+		if c == nil {
+			return
+		}
 		err := c.Run()
 		if err != nil {
 			fmt.Println(err)
