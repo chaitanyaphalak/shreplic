@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/vonaka/shreplic/client/base"
+	"github.com/vonaka/shreplic/paxoi"
 	"github.com/vonaka/shreplic/tools/dlog"
 )
 
@@ -28,6 +29,8 @@ var (
 	myAddr         = flag.String("addr", "", "Client address (this machine)")
 	cloneNb        = flag.Int("clone", 0, "Number of clones (unique clients acting like this one)")
 	logFile        = flag.String("logf", "", "Path to the log file")
+	paxoiClient    = flag.Bool("paxoi", false, "Run Paxoi external client")
+	args           = flag.String("args", "", "Custom arguments")
 )
 
 func main() {
@@ -51,11 +54,20 @@ func runSimpleClient(i int) {
 	} else {
 		l = newLogger(*logFile + strconv.Itoa(i))
 	}
-	c := base.NewSimpleClient(*maddr, *collocatedWith, *mport, *reqNum,
-		*writes, *psize, *conflicts, *fast, *lread, *noLeader, *verbose, l)
-	err := c.Run()
-	if err != nil {
-		fmt.Println(err)
+	if *paxoiClient {
+		c := paxoi.NewClient(*maddr, *collocatedWith, *mport, *reqNum, *writes,
+			*psize, *conflicts, *fast, *lread, *noLeader, *verbose, l, *args)
+		err := c.Run()
+		if err != nil {
+			fmt.Println(err)
+		}
+	} else {
+		c := base.NewSimpleClient(*maddr, *collocatedWith, *mport, *reqNum,
+			*writes, *psize, *conflicts, *fast, *lread, *noLeader, *verbose, l)
+		err := c.Run()
+		if err != nil {
+			fmt.Println(err)
+		}
 	}
 }
 

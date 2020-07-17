@@ -49,6 +49,7 @@ func NewClient(maddr, collocated string, mport, reqNum, writes, psize, conflict 
 	}
 
 	initCs(&c.cs, c.RPC)
+	c.reinitFastAndSlowAcks()
 
 	go c.handleMsgs()
 
