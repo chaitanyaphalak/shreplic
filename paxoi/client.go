@@ -17,6 +17,7 @@ type Client struct {
 	N      int
 	AQ     smr.Majority
 	cs     CommunicationSupply
+	val    []byte
 	ready  chan struct{}
 	ballot int32
 }
@@ -35,6 +36,7 @@ func NewClient(maddr, collocated string, mport, reqNum, writes, psize, conflict 
 
 		N:      *repNum,
 		AQ:     smr.NewMajorityOf(*repNum),
+		val:    nil,
 		ready:  make(chan struct{}, 1),
 		ballot: -1,
 	}
@@ -81,7 +83,7 @@ func (c *Client) handleMsgs() {
 		select {
 		case m := <-c.cs.fastAckChan:
 			fastAck := m.(*MFastAck)
-			c.handleFastAck(fastAck)
+			c.handleFastAck(fastAck, false)
 
 		case m := <-c.cs.slowAckChan:
 			slowAck := m.(*MSlowAck)
@@ -94,7 +96,7 @@ func (c *Client) handleMsgs() {
 		case m := <-c.cs.acksChan:
 			acks := m.(*MAcks)
 			for _, f := range acks.FastAcks {
-				c.handleFastAck(copyFastAck(&f))
+				c.handleFastAck(copyFastAck(&f), false)
 			}
 			for _, s := range acks.LightSlowAcks {
 				ls := s
@@ -113,13 +115,17 @@ func (c *Client) handleMsgs() {
 				} else {
 					fastAck.Dep = nil
 				}
-				c.handleFastAck(fastAck)
+				c.handleFastAck(fastAck, false)
 			}
+
+		case m := <-c.cs.replyChan:
+			reply := m.(*MReply)
+			c.handleReply(reply)
 		}
 	}
 }
 
-func (c *Client) handleFastAck(f *MFastAck) {
+func (c *Client) handleFastAck(f *MFastAck, fromLeader bool) {
 	if c.ballot == -1 {
 		c.ballot = f.Ballot
 	} else if c.ballot < f.Ballot {
@@ -129,11 +135,11 @@ func (c *Client) handleFastAck(f *MFastAck) {
 		return
 	}
 
-	c.fastAndSlowAcks.Add(f.Replica, false, f)
+	c.fastAndSlowAcks.Add(f.Replica, fromLeader, f)
 }
 
 func (c *Client) handleSlowAck(s *MSlowAck) {
-	c.handleFastAck((*MFastAck)(s))
+	c.handleFastAck((*MFastAck)(s), false)
 }
 
 func (c *Client) handleLightSlowAck(ls *MLightSlowAck) {
@@ -142,11 +148,24 @@ func (c *Client) handleLightSlowAck(ls *MLightSlowAck) {
 	f.Ballot = ls.Ballot
 	f.CmdId = ls.CmdId
 	f.Dep = nil
-	c.handleFastAck(f)
+	c.handleFastAck(f, false)
 }
 
 func (c *Client) handleFastAndSlowAcks(leaderMsg interface{}, msgs []interface{}) {
 	if leaderMsg == nil {
 		return
 	}
+
+	c.ResChan <- c.val
+	c.ready <- struct{}{}
+}
+
+func (c *Client) handleReply(r *MReply) {
+	f := newFastAck()
+	f.Replica = r.Replica
+	f.Ballot = r.Ballot
+	f.CmdId = r.CmdId
+	f.Dep = r.Dep
+	c.val = r.Rep
+	c.handleFastAck(f, true)
 }
