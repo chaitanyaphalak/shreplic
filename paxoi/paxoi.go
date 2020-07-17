@@ -106,7 +106,7 @@ func NewReplica(rid int, addrs []string, exec, dr, optExec bool,
 
 	r.sender = smr.NewSender(r.Replica)
 	r.batcher = NewBatcher(r, 16, releaseFastAck, func(_ *MLightSlowAck) {})
-	r.repchan = NewReplyChan(r.Replica)
+	r.repchan = NewReplyChan(r)
 	r.qs = smr.NewQuorumSet(r.N/2+1, r.N)
 
 	AQ, leaderId, err := smr.NewQuorumFromFile(qfile, r.Replica)
@@ -276,7 +276,8 @@ func (r *Replica) handlePropose(msg *smr.GPropose,
 	} else {
 		if r.Id == r.leader() {
 			r.batcher.SendFastAck(fastAckSend)
-			// TODO: send Reply
+			// TODO: save old state
+			r.deliver(desc, cmdId)
 		} else {
 			r.batcher.SendFastAckClient(fastAckSend, msg.ClientId)
 		}
@@ -433,9 +434,14 @@ func (r *Replica) handleCollect(msg *MCollect) {
 func (r *Replica) deliver(desc *commandDesc, cmdId CommandId) {
 	// TODO: what if desc.propose is nil ?
 	//       is that possible ?
+	//
 	//       Don't think so
 
-	if r.delivered.Has(cmdId.String()) || desc.phase != COMMIT || !r.Exec {
+	if r.delivered.Has(cmdId.String()) || !r.Exec {
+		return
+	}
+
+	if desc.phase != COMMIT && (!r.optExec || r.Id != r.leader()) {
 		return
 	}
 
