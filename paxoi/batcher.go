@@ -1,21 +1,31 @@
 package paxoi
 
+import "github.com/vonaka/shreplic/tools/fastrpc"
+
 type Batcher struct {
-	fastAcks      chan *MFastAck
-	lightSlowAcks chan *MLightSlowAck
+	fastAcks      chan BatcherOp
+	lightSlowAcks chan BatcherOp
+}
+
+type BatcherOp struct {
+	cid          int32
+	msg          fastrpc.Serializable
+	sendToClient bool
 }
 
 func NewBatcher(r *Replica, size int,
 	freeFastAck func(*MFastAck), freeSlowAck func(*MLightSlowAck)) *Batcher {
 	b := &Batcher{
-		fastAcks:      make(chan *MFastAck, size),
-		lightSlowAcks: make(chan *MLightSlowAck, size),
+		fastAcks:      make(chan BatcherOp, size),
+		lightSlowAcks: make(chan BatcherOp, size),
 	}
 
 	go func() {
 		for !r.Shutdown {
 			select {
-			case fastAck := <-b.fastAcks:
+			case op := <-b.fastAcks:
+				fastAck := op.msg.(*MFastAck)
+
 				fLen := len(b.fastAcks) + 1
 				sLen := len(b.lightSlowAcks)
 				acks := &MAcks{
@@ -37,7 +47,8 @@ func NewBatcher(r *Replica, size int,
 				acks.FastAcks[0] = *fastAck
 				freeFastAck(fastAck)
 				for i := 1; i < fLen; i++ {
-					f := <-b.fastAcks
+					opP := <-b.fastAcks
+					f := opP.msg.(*MFastAck)
 					acks.FastAcks[i] = *f
 
 					if ballot == f.Ballot {
@@ -52,7 +63,8 @@ func NewBatcher(r *Replica, size int,
 					freeFastAck(f)
 				}
 				for i := 0; i < sLen; i++ {
-					s := <-b.lightSlowAcks
+					opP := <-b.lightSlowAcks
+					s := opP.msg.(*MLightSlowAck)
 					acks.LightSlowAcks[i] = *s
 
 					if ballot == s.Ballot {
@@ -72,13 +84,25 @@ func NewBatcher(r *Replica, size int,
 					freeSlowAck(s)
 				}
 
+				var (
+					m   fastrpc.Serializable
+					rpc uint8
+				)
 				if ballot != -1 {
-					r.sender.SendToAll(optAcks, r.cs.optAcksRPC)
+					m = optAcks
+					rpc = r.cs.optAcksRPC
 				} else {
-					r.sender.SendToAll(acks, r.cs.acksRPC)
+					m = acks
+					rpc = r.cs.acksRPC
+				}
+				r.sender.SendToAll(m, rpc)
+				if op.sendToClient {
+					r.sender.SendToClient(op.cid, m, rpc)
 				}
 
-			case slowAck := <-b.lightSlowAcks:
+			case op := <-b.lightSlowAcks:
+				slowAck := op.msg.(*MLightSlowAck)
+
 				fLen := len(b.fastAcks)
 				sLen := len(b.lightSlowAcks) + 1
 				acks := &MAcks{
@@ -100,7 +124,8 @@ func NewBatcher(r *Replica, size int,
 				acks.LightSlowAcks[0] = *slowAck
 				freeSlowAck(slowAck)
 				for i := 1; i < sLen; i++ {
-					s := <-b.lightSlowAcks
+					opP := <-b.lightSlowAcks
+					s := opP.msg.(*MLightSlowAck)
 					acks.LightSlowAcks[i] = *s
 
 					if ballot == s.Ballot {
@@ -115,7 +140,8 @@ func NewBatcher(r *Replica, size int,
 					freeSlowAck(s)
 				}
 				for i := 0; i < fLen; i++ {
-					f := <-b.fastAcks
+					opP := <-b.fastAcks
+					f := opP.msg.(*MFastAck)
 					acks.FastAcks[i] = *f
 
 					if ballot == f.Ballot {
@@ -133,10 +159,20 @@ func NewBatcher(r *Replica, size int,
 					freeFastAck(f)
 				}
 
+				var (
+					m   fastrpc.Serializable
+					rpc uint8
+				)
 				if ballot != -1 {
-					r.sender.SendToAll(optAcks, r.cs.optAcksRPC)
+					m = optAcks
+					rpc = r.cs.optAcksRPC
 				} else {
-					r.sender.SendToAll(acks, r.cs.acksRPC)
+					m = acks
+					rpc = r.cs.acksRPC
+				}
+				r.sender.SendToAll(m, rpc)
+				if op.sendToClient {
+					r.sender.SendToClient(op.cid, m, rpc)
 				}
 			}
 		}
@@ -146,9 +182,31 @@ func NewBatcher(r *Replica, size int,
 }
 
 func (b *Batcher) SendFastAck(f *MFastAck) {
-	b.fastAcks <- f
+	b.fastAcks <- BatcherOp{
+		msg:          f,
+		sendToClient: false,
+	}
 }
 
 func (b *Batcher) SendLightSlowAck(s *MLightSlowAck) {
-	b.lightSlowAcks <- s
+	b.lightSlowAcks <- BatcherOp{
+		msg:          s,
+		sendToClient: false,
+	}
+}
+
+func (b *Batcher) SendFastAckClient(f *MFastAck, cid int32) {
+	b.fastAcks <- BatcherOp{
+		msg:          f,
+		cid:          cid,
+		sendToClient: true,
+	}
+}
+
+func (b *Batcher) SendLightSlowAckClient(s *MLightSlowAck, cid int32) {
+	b.lightSlowAcks <- BatcherOp{
+		msg:          s,
+		cid:          cid,
+		sendToClient: true,
+	}
 }

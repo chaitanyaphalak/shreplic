@@ -7,6 +7,7 @@ const (
 	SEND_QUORUM
 	SEND_EXCEPT
 	SEND_SINGLE
+	SEND_CLIENT
 )
 
 const ARGS_NUM int = CHAN_BUFFER_SIZE
@@ -16,6 +17,7 @@ type SendArg struct {
 	rpc      uint8
 	quorum   Quorum
 	sendType int32
+	clientId int32
 	free     func()
 }
 
@@ -34,6 +36,8 @@ func NewSender(r *Replica) Sender {
 				sendToQuorum(r, arg.quorum, arg.msg, arg.rpc)
 			case SEND_EXCEPT:
 				sendExcept(r, arg.quorum, arg.msg, arg.rpc)
+			case SEND_CLIENT:
+				r.SendClientMsg(arg.clientId, arg.rpc, arg.msg)
 			case SEND_SINGLE:
 			}
 			if arg.free != nil {
@@ -77,6 +81,17 @@ func (s Sender) SendExceptAndFree(q Quorum,
 	}
 }
 
+func (s Sender) SendToClientAndFree(cid int32,
+	msg fastrpc.Serializable, rpc uint8, free func()) {
+	s <- SendArg{
+		msg:      msg,
+		rpc:      rpc,
+		clientId: cid,
+		sendType: SEND_CLIENT,
+		free:     free,
+	}
+}
+
 func (s Sender) SendToAll(msg fastrpc.Serializable, rpc uint8) {
 	s.SendToAllAndFree(msg, rpc, nil)
 }
@@ -87,6 +102,10 @@ func (s Sender) SendToQuorum(q Quorum, msg fastrpc.Serializable, rpc uint8) {
 
 func (s Sender) SendExcept(q Quorum, msg fastrpc.Serializable, rpc uint8) {
 	s.SendExceptAndFree(q, msg, rpc, nil)
+}
+
+func (s Sender) SendToClient(cid int32, msg fastrpc.Serializable, rpc uint8) {
+	s.SendToClientAndFree(cid, msg, rpc, nil)
 }
 
 func sendToAll(r *Replica, msg fastrpc.Serializable, rpc uint8) {

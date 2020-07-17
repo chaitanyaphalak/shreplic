@@ -216,7 +216,7 @@ func (r *Replica) SendMsg(peerId int32, code uint8, msg fastrpc.Serializable) {
 	w.Flush()
 }
 
-func (r *Replica) SendClientMsg(id int32, c uint8, msg fastrpc.Serializable) {
+func (r *Replica) SendClientMsg(id int32, code uint8, msg fastrpc.Serializable) {
 	r.M.Lock()
 	defer r.M.Unlock()
 
@@ -225,7 +225,7 @@ func (r *Replica) SendClientMsg(id int32, c uint8, msg fastrpc.Serializable) {
 		log.Printf("Connection to client %d lost!\n", id)
 		return
 	}
-	w.WriteByte(c)
+	w.WriteByte(code)
 	msg.Marshal(w)
 	w.Flush()
 }
