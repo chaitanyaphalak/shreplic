@@ -82,7 +82,7 @@ func NewClientWithLog(maddr string, mport int,
 		LocalRead:  lread,
 		Leaderless: leaderless,
 
-		RPC:       fastrpc.NewTable(),
+		RPC:       fastrpc.NewTableId(smr.GENERIC_SMR_BEACON_REPLY + 1),
 		ResChan:   make(chan []byte, 8),
 		Waiting:   make(chan struct{}, 8),
 		ReadTable: false,
