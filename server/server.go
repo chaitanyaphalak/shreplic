@@ -16,6 +16,7 @@ import (
 
 	"github.com/vonaka/shreplic/epaxos"
 	"github.com/vonaka/shreplic/master/defs"
+	"github.com/vonaka/shreplic/n2paxos"
 	"github.com/vonaka/shreplic/paxoi"
 	"github.com/vonaka/shreplic/paxos"
 	//user imports
@@ -26,9 +27,9 @@ var (
 	masterAddr  = flag.String("maddr", "", "Master address")
 	masterPort  = flag.Int("mport", 7087, "Master port")
 	myAddr      = flag.String("addr", "", "Server address (this machine)")
-	doEpaxos    = flag.Bool("e", false, "Use EPaxos as the replication protocol")
-	doPaxoi     = flag.Bool("p", false, "Use Paxoi as the replication protocol")
-	doOptpaxos  = flag.Bool("n2", false, "Use n²Paxos as the replication protocol")
+	doEpaxos    = flag.Bool("epaxos", false, "Use EPaxos as the replication protocol")
+	doPaxoi     = flag.Bool("paxoi", false, "Use Paxoi as the replication protocol")
+	doN2paxos  = flag.Bool("n2paxos", false, "Use n²Paxos as the replication protocol")
 	cpuprofile  = flag.String("cpuprofile", "", "Cpu profile")
 	thrifty     = flag.Bool("thrifty", false, "Use only as many messages as strictly required")
 	exec        = flag.Bool("exec", true, "Execute commands")
@@ -97,8 +98,12 @@ func main() {
 		rep := paxoi.NewReplica(replicaId, nodeList, *exec,
 			*dreply, *optExec, *poolLevel, *maxfailures, *qfile, ps)
 		rpc.Register(rep)
-	} else if *doOptpaxos {
+	} else if *doN2paxos {
 		log.Println("Starting n²Paxos replica...")
+		n2paxos.MaxDescRoutines = *descNum
+		rep := n2paxos.NewReplica(replicaId, nodeList, *exec,
+			*dreply, *optExec, *poolLevel, *maxfailures, *qfile, ps)
+		rpc.Register(rep)
 	} else {
 		log.Println("Starting Paxos replica...")
 		rep := paxos.NewReplica(replicaId, nodeList, isLeader, *thrifty, *exec,
