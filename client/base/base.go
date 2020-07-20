@@ -89,7 +89,7 @@ func (c *SimpleClient) Run() error {
 		} else {
 			var err error
 			if c.Fast {
-				err = c.waitReplies(c.CollocatedId, c.Seqnum)
+				err = c.waitReplies(c.ClosestId, c.Seqnum)
 			} else {
 				err = c.waitReplies(c.LastSubmitter, c.Seqnum)
 			}

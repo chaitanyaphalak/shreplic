@@ -503,7 +503,7 @@ func (r *Replica) clientListener(conn net.Conn) {
 					Propose:    propose,
 					Reply:      writer,
 					Mutex:      mutex,
-					Collocated: isProxy,
+					Collocated: isProxy || len(r.ProxyAddrs) == 0,
 				})
 			}
 			break
