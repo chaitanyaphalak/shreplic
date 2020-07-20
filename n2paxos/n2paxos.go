@@ -190,21 +190,6 @@ func (r *Replica) run() {
 				tb := b
 				r.getCmdDesc(b.CmdSlot, &tb)
 			}
-
-			/*case m := <-r.cs.optAcksChan:
-			optAcks := m.(*MOptAcks)
-			for _, ack := range optAcks.Acks {
-				fastAck := newFastAck()
-				fastAck.Replica = optAcks.Replica
-				fastAck.Ballot = optAcks.Ballot
-				fastAck.CmdId = ack.CmdId
-				if !IsNilDepOfCmdId(ack.CmdId, ack.Dep) {
-					fastAck.Dep = ack.Dep
-				} else {
-					fastAck.Dep = nil
-				}
-				r.getCmdDesc(fastAck.CmdId, fastAck, nil)
-			}*/
 		}
 	}
 }
