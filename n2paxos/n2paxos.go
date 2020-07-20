@@ -12,7 +12,6 @@ import (
 	"github.com/vonaka/shreplic/state"
 	"github.com/vonaka/shreplic/tools"
 	"github.com/vonaka/shreplic/tools/dlog"
-	"github.com/vonaka/shreplic/tools/fastrpc"
 )
 
 type Replica struct {
@@ -30,8 +29,8 @@ type Replica struct {
 	cmdDescs  cmap.ConcurrentMap
 	delivered cmap.ConcurrentMap
 
-	sender smr.Sender
-	//batcher *Batcher
+	sender  smr.Sender
+	batcher *Batcher
 	history []commandStaticDesc
 
 	AQ smr.Quorum
@@ -102,7 +101,7 @@ func NewReplica(rid int, addrs []string, exec, dr, optExec bool,
 	}
 
 	r.sender = smr.NewSender(r.Replica)
-	//r.batcher = NewBatcher(r, 16, releaseFastAck, func(_ *MLightSlowAck) {})
+	r.batcher = NewBatcher(r, 16)
 	r.qs = smr.NewQuorumSet(r.N/2+1, r.N)
 
 	AQ, leaderId, err := smr.NewQuorumFromFile(qfile, r.Replica)
@@ -181,15 +180,16 @@ func (r *Replica) run() {
 			twoB := m.(*M2B)
 			r.getCmdDesc(twoB.CmdSlot, twoB)
 
-			//case m := <-r.cs.twosChan:
-			/*m2s := m.(*M2s)
-			for _, _ := range m2s.TwoAs {
-				//r.getCmdDesc(a.CmdId, copyFastAck(&f), nil)
+		case m := <-r.cs.twosChan:
+			m2s := m.(*M2s)
+			for _, a := range m2s.TwoAs {
+				ta := a
+				r.getCmdDesc(a.CmdSlot, &ta)
 			}
-			for _, _ := range m2s.TwoBs {
-				//ls := s
-				//r.getCmdDesc(s.CmdId, &ls, nil)
-			}*/
+			for _, b := range m2s.TwoBs {
+				tb := b
+				r.getCmdDesc(b.CmdSlot, &tb)
+			}
 
 			/*case m := <-r.cs.optAcksChan:
 			optAcks := m.(*MOptAcks)
@@ -228,8 +228,7 @@ func (r *Replica) handlePropose(msg *smr.GPropose, desc *commandDesc, slot int) 
 		CmdSlot: slot,
 	}
 
-	// TODO: send with batcher
-	go r.sendToAll(twoA, r.cs.twoARPC)
+	r.batcher.Send2A(twoA)
 	r.handle2A(twoA, desc)
 }
 
@@ -255,8 +254,7 @@ func (r *Replica) handle2A(msg *M2A, desc *commandDesc) {
 		CmdSlot: msg.CmdSlot,
 	}
 
-	// TODO: send with batcher
-	go r.sendToAll(twoB, r.cs.twoBRPC)
+	r.batcher.Send2B(twoB)
 	r.handle2B(twoB, desc)
 }
 
@@ -443,16 +441,4 @@ func (r *Replica) handleMsg(m interface{}, desc *commandDesc, slot int) bool {
 	}
 
 	return false
-}
-
-func (r *Replica) sendToAll(msg fastrpc.Serializable, rpc uint8) {
-	for p := int32(0); p < int32(r.N); p++ {
-		r.M.Lock()
-		if r.Alive[p] {
-			r.M.Unlock()
-			r.SendMsg(p, rpc, msg)
-			r.M.Lock()
-		}
-		r.M.Unlock()
-	}
 }
