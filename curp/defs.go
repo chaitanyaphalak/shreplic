@@ -1,11 +1,11 @@
 package curp
 
 import (
+	"bufio"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"sync"
-	"bufio"
-	"encoding/binary"
 	"time"
 
 	"github.com/vonaka/shreplic/server/smr"
@@ -151,8 +151,8 @@ func (t *MAcceptAck) BinarySize() (nbytes int, sizeKnown bool) {
 }
 
 type MAcceptAckCache struct {
-	mu	sync.Mutex
-	cache	[]*MAcceptAck
+	mu    sync.Mutex
+	cache []*MAcceptAck
 }
 
 func NewMAcceptAckCache() *MAcceptAckCache {
@@ -223,8 +223,8 @@ func (t *MAAcks) BinarySize() (nbytes int, sizeKnown bool) {
 }
 
 type MAAcksCache struct {
-	mu	sync.Mutex
-	cache	[]*MAAcks
+	mu    sync.Mutex
+	cache []*MAAcks
 }
 
 func NewMAAcksCache() *MAAcksCache {
@@ -340,8 +340,8 @@ func (t *MRecordAck) BinarySize() (nbytes int, sizeKnown bool) {
 }
 
 type MRecordAckCache struct {
-	mu	sync.Mutex
-	cache	[]*MRecordAck
+	mu    sync.Mutex
+	cache []*MRecordAck
 }
 
 func NewMRecordAckCache() *MRecordAckCache {
@@ -416,8 +416,8 @@ func (t *MCommit) BinarySize() (nbytes int, sizeKnown bool) {
 }
 
 type MCommitCache struct {
-	mu	sync.Mutex
-	cache	[]*MCommit
+	mu    sync.Mutex
+	cache []*MCommit
 }
 
 func NewMCommitCache() *MCommitCache {
@@ -488,8 +488,8 @@ func (t *CommandId) BinarySize() (nbytes int, sizeKnown bool) {
 }
 
 type CommandIdCache struct {
-	mu	sync.Mutex
-	cache	[]*CommandId
+	mu    sync.Mutex
+	cache []*CommandId
 }
 
 func NewCommandIdCache() *CommandIdCache {
@@ -550,8 +550,8 @@ func (t *MReply) BinarySize() (nbytes int, sizeKnown bool) {
 }
 
 type MReplyCache struct {
-	mu	sync.Mutex
-	cache	[]*MReply
+	mu    sync.Mutex
+	cache []*MReply
 }
 
 func NewMReplyCache() *MReplyCache {
@@ -651,8 +651,8 @@ func (t *MAccept) BinarySize() (nbytes int, sizeKnown bool) {
 }
 
 type MAcceptCache struct {
-	mu	sync.Mutex
-	cache	[]*MAccept
+	mu    sync.Mutex
+	cache []*MAccept
 }
 
 func NewMAcceptCache() *MAcceptCache {

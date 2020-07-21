@@ -2,10 +2,10 @@ package curp
 
 import (
 	"fmt"
-	"sync"
 	"log"
-	"time"
 	"strconv"
+	"sync"
+	"time"
 
 	"github.com/orcaman/concurrent-map"
 	"github.com/vonaka/shreplic/server/smr"

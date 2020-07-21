@@ -32,7 +32,7 @@ func NewBatcher(r *Replica, size int) *Batcher {
 				bLen := len(b.acceptAcks)
 				aacks := &MAAcks{
 					Accepts: make([]MAccept, aLen),
-					Acks: make([]MAcceptAck, bLen),
+					Acks:    make([]MAcceptAck, bLen),
 				}
 
 				aacks.Accepts[0] = *acc
@@ -63,7 +63,7 @@ func NewBatcher(r *Replica, size int) *Batcher {
 				bLen := len(b.acceptAcks) + 1
 				aacks := &MAAcks{
 					Accepts: make([]MAccept, aLen),
-					Acks: make([]MAcceptAck, bLen),
+					Acks:    make([]MAcceptAck, bLen),
 				}
 
 				for i := 0; i < aLen; i++ {
