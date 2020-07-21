@@ -200,6 +200,8 @@ func (r *Replica) run() {
 				r.getCmdDesc(b.CmdSlot, &tb)
 			}
 		}
+
+		// TODO: add Sync message
 	}
 }
 
