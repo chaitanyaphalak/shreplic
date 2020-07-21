@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/vonaka/shreplic/client/base"
+	"github.com/vonaka/shreplic/curp"
 	"github.com/vonaka/shreplic/paxoi"
 	"github.com/vonaka/shreplic/tools/dlog"
 )
@@ -30,6 +31,7 @@ var (
 	cloneNb        = flag.Int("clone", 0, "Number of clones (unique clients acting like this one)")
 	logFile        = flag.String("logf", "", "Path to the log file")
 	paxoiClient    = flag.Bool("paxoi", false, "Run Paxoi external client")
+	curpClient     = flag.Bool("curp", false, "Run CURP external client")
 	args           = flag.String("args", "", "Custom arguments")
 )
 
@@ -56,6 +58,16 @@ func runSimpleClient(i int) {
 	}
 	if *paxoiClient {
 		c := paxoi.NewClient(*maddr, *collocatedWith, *mport, *reqNum, *writes,
+			*psize, *conflicts, *fast, *lread, *noLeader, *verbose, l, *args)
+		if c == nil {
+			return
+		}
+		err := c.Run()
+		if err != nil {
+			fmt.Println(err)
+		}
+	} else if *curpClient {
+		c := curp.NewClient(*maddr, *collocatedWith, *mport, *reqNum, *writes,
 			*psize, *conflicts, *fast, *lread, *noLeader, *verbose, l, *args)
 		if c == nil {
 			return

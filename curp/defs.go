@@ -133,7 +133,7 @@ func initCs(cs *CommunicationSupply, t *fastrpc.Table) {
 	cs.recordAckChan = make(chan fastrpc.Serializable, smr.CHAN_BUFFER_SIZE)
 	cs.commitChan = make(chan fastrpc.Serializable, smr.CHAN_BUFFER_SIZE)
 
-	cs.replyRPC = t.Register(new(MReply), cs.acceptChan)
+	cs.replyRPC = t.Register(new(MReply), cs.replyChan)
 	cs.acceptRPC = t.Register(new(MAccept), cs.acceptChan)
 	cs.acceptAckRPC = t.Register(new(MAcceptAck), cs.acceptAckChan)
 	cs.aacksRPC = t.Register(new(MAAcks), cs.aacksChan)

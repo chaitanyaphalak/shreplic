@@ -15,7 +15,7 @@ type QuorumI interface {
 type Majority int
 
 func NewMajorityOf(N int) Majority {
-	return Majority(N/2+1)
+	return Majority(N/2 + 1)
 }
 
 func (m Majority) Size() int {
@@ -23,6 +23,20 @@ func (m Majority) Size() int {
 }
 
 func (m Majority) Contains(int32) bool {
+	return true
+}
+
+type ThreeQuarters int
+
+func NewThreeQuartersOf(N int) ThreeQuarters {
+	return ThreeQuarters((3*N)/4 + 1)
+}
+
+func (m ThreeQuarters) Size() int {
+	return int(m)
+}
+
+func (m ThreeQuarters) Contains(int32) bool {
 	return true
 }
 
