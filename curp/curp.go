@@ -33,7 +33,6 @@ type Replica struct {
 	delivered cmap.ConcurrentMap
 
 	sender  smr.Sender
-	batcher *Batcher
 	history []commandStaticDesc
 
 	AQ smr.Quorum
@@ -105,7 +104,6 @@ func NewReplica(rid int, addrs []string, exec, dr bool,
 
 	r.Q = smr.NewMajorityOf(r.N)
 	r.sender = smr.NewSender(r.Replica)
-	r.batcher = NewBatcher(r, 16)
 	r.qs = smr.NewQuorumSet(r.N/2+1, r.N)
 
 	_, leaderId, err := smr.NewQuorumFromFile(qfile, r.Replica)
@@ -226,7 +224,7 @@ func (r *Replica) handlePropose(msg *smr.GPropose, desc *commandDesc, slot int) 
 		CmdSlot: slot,
 	}
 
-	r.batcher.SendAccept(acc, smr.SEND_ALL, -1)
+	r.sender.SendToAll(acc, r.cs.acceptRPC)
 	r.deliver(desc, slot)
 	r.handleAccept(acc, desc)
 }
@@ -253,7 +251,7 @@ func (r *Replica) handleAccept(msg *MAccept, desc *commandDesc) {
 		r.handleAcceptAck(ack, desc)
 	} else {
 		r.unsynced.Remove(desc.cmdId.String())
-		r.batcher.SendAcceptAck(ack, smr.SEND_SINGLE, msg.Replica)
+		r.sender.SendTo(msg.Replica, ack, r.cs.acceptAckRPC)
 	}
 }
 
