@@ -490,6 +490,9 @@ func (r *Replica) handleMsg(m interface{}, desc *commandDesc, slot int) bool {
 			r.handleCommit(msg, desc)
 		}
 
+	case *MSync:
+		r.handleSync(msg, desc)
+
 	case string:
 		if msg == "deliver" {
 			r.deliver(desc, slot, false)

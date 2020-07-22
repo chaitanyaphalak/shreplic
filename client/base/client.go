@@ -31,8 +31,12 @@ type Client struct {
 	ClientId      int32
 	LeaderId      int
 	ClosestId     int
+	LastPropose   smr.Propose
 	CollocatedId  int
 	LastSubmitter int
+
+	MinLatency float64
+	MaxLatency float64
 
 	Fast       bool
 	Verbose    bool
@@ -76,6 +80,9 @@ func NewClientWithLog(maddr string, mport int,
 		ClosestId:     -1,
 		CollocatedId:  -1,
 		LastSubmitter: -1,
+
+		MinLatency: 0.0,
+		MaxLatency: 0.0,
 
 		Fast:       fast,
 		Verbose:    verbose,
@@ -299,6 +306,7 @@ func (c *Client) execute(args smr.Propose) []byte {
 		submitter = c.ClosestId
 	}
 	c.LastSubmitter = submitter
+	c.LastPropose = args
 
 	if !c.Fast {
 		c.Println("Sent to", submitter)
@@ -325,6 +333,7 @@ func (c *Client) findClosestReplica(alive []bool) error {
 
 	found := false
 	minLatency := math.MaxFloat64
+	maxLatency := 0.0
 	for i := 0; i < len(c.replicaList); i++ {
 		if !alive[i] {
 			continue
@@ -345,15 +354,22 @@ func (c *Client) findClosestReplica(alive []bool) error {
 			latency, _ := strconv.ParseFloat(strings.Split(string(out), "/")[4], 64)
 			c.logger.Println(i, "->", latency)
 
-			if minLatency > latency && !found {
-				c.ClosestId = i
+			if minLatency > latency {
+				if !found {
+					c.ClosestId = i
+				}
 				minLatency = latency
+			}
+			if maxLatency < latency {
+				maxLatency = latency
 			}
 		} else {
 			c.logger.Println("Cannot ping", c.replicaList[i])
 			return err
 		}
 	}
+	c.MinLatency = minLatency
+	c.MaxLatency = maxLatency
 
 	return nil
 }

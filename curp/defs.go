@@ -178,8 +178,8 @@ func (t *MRecordAck) BinarySize() (nbytes int, sizeKnown bool) {
 }
 
 type MRecordAckCache struct {
-	mu	sync.Mutex
-	cache	[]*MRecordAck
+	mu    sync.Mutex
+	cache []*MRecordAck
 }
 
 func NewMRecordAckCache() *MRecordAckCache {
@@ -254,8 +254,8 @@ func (t *MSyncReply) BinarySize() (nbytes int, sizeKnown bool) {
 }
 
 type MSyncReplyCache struct {
-	mu	sync.Mutex
-	cache	[]*MSyncReply
+	mu    sync.Mutex
+	cache []*MSyncReply
 }
 
 func NewMSyncReplyCache() *MSyncReplyCache {
@@ -355,8 +355,8 @@ func (t *MAAcks) BinarySize() (nbytes int, sizeKnown bool) {
 }
 
 type MAAcksCache struct {
-	mu	sync.Mutex
-	cache	[]*MAAcks
+	mu    sync.Mutex
+	cache []*MAAcks
 }
 
 func NewMAAcksCache() *MAAcksCache {
@@ -472,8 +472,8 @@ func (t *MReply) BinarySize() (nbytes int, sizeKnown bool) {
 }
 
 type MReplyCache struct {
-	mu	sync.Mutex
-	cache	[]*MReply
+	mu    sync.Mutex
+	cache []*MReply
 }
 
 func NewMReplyCache() *MReplyCache {
@@ -573,8 +573,8 @@ func (t *MAccept) BinarySize() (nbytes int, sizeKnown bool) {
 }
 
 type MAcceptCache struct {
-	mu	sync.Mutex
-	cache	[]*MAccept
+	mu    sync.Mutex
+	cache []*MAccept
 }
 
 func NewMAcceptCache() *MAcceptCache {
@@ -665,8 +665,8 @@ func (t *MAcceptAck) BinarySize() (nbytes int, sizeKnown bool) {
 }
 
 type MAcceptAckCache struct {
-	mu	sync.Mutex
-	cache	[]*MAcceptAck
+	mu    sync.Mutex
+	cache []*MAcceptAck
 }
 
 func NewMAcceptAckCache() *MAcceptAckCache {
@@ -737,8 +737,8 @@ func (t *MCommit) BinarySize() (nbytes int, sizeKnown bool) {
 }
 
 type MCommitCache struct {
-	mu	sync.Mutex
-	cache	[]*MCommit
+	mu    sync.Mutex
+	cache []*MCommit
 }
 
 func NewMCommitCache() *MCommitCache {
@@ -809,8 +809,8 @@ func (t *MSync) BinarySize() (nbytes int, sizeKnown bool) {
 }
 
 type MSyncCache struct {
-	mu	sync.Mutex
-	cache	[]*MSync
+	mu    sync.Mutex
+	cache []*MSync
 }
 
 func NewMSyncCache() *MSyncCache {
@@ -871,8 +871,8 @@ func (t *CommandId) BinarySize() (nbytes int, sizeKnown bool) {
 }
 
 type CommandIdCache struct {
-	mu	sync.Mutex
-	cache	[]*CommandId
+	mu    sync.Mutex
+	cache []*CommandId
 }
 
 func NewCommandIdCache() *CommandIdCache {
