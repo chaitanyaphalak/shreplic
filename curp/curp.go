@@ -199,9 +199,14 @@ func (r *Replica) run() {
 				tb := b
 				r.getCmdDesc(b.CmdSlot, &tb)
 			}
-		}
 
-		// TODO: add Sync message
+		case m := <-r.cs.syncChan:
+			sync := m.(*MSync)
+			slot, exists := r.slots.Get(sync.CmdId.String())
+			if exists {
+				r.getCmdDesc(slot.(int), sync)
+			}
+		}
 	}
 }
 
@@ -226,8 +231,8 @@ func (r *Replica) handlePropose(msg *smr.GPropose, desc *commandDesc, slot int) 
 		CmdSlot: slot,
 	}
 
+	r.deliver(desc, slot, false)
 	r.sender.SendToAll(acc, r.cs.acceptRPC)
-	r.deliver(desc, slot)
 	r.handleAccept(acc, desc)
 }
 
@@ -272,7 +277,23 @@ func (r *Replica) handleCommit(msg *MCommit, desc *commandDesc) {
 
 	desc.phase = COMMIT
 	r.unsynced.Remove(desc.cmdId.String())
-	r.deliver(desc, desc.cmdSlot)
+	r.deliver(desc, desc.cmdSlot, false)
+}
+
+func (r *Replica) handleSync(msg *MSync, desc *commandDesc) {
+	desc.afterPayload.Call(func() {
+		if desc.val != nil && r.delivered.Has(strconv.Itoa(desc.cmdSlot)) {
+			rep := &MSyncReply{
+				Replica: r.Id,
+				Ballot:  r.ballot,
+				CmdId:   desc.cmdId,
+				Rep:     desc.val,
+			}
+			r.sender.SendToClient(desc.propose.ClientId, rep, r.cs.syncReplyRPC)
+		} else {
+			r.deliver(desc, desc.cmdSlot, true)
+		}
+	})
 }
 
 func getAcksHandler(r *Replica, desc *commandDesc) smr.MsgSetHandler {
@@ -297,7 +318,7 @@ func (r *Replica) ok(cmd state.Command) uint8 {
 	return ok
 }
 
-func (r *Replica) deliver(desc *commandDesc, slot int) {
+func (r *Replica) deliver(desc *commandDesc, slot int, sync bool) {
 	desc.afterPayload.Call(func() {
 
 		if r.delivered.Has(strconv.Itoa(slot)) || !r.Exec {
@@ -330,13 +351,23 @@ func (r *Replica) deliver(desc *commandDesc, slot int) {
 				return
 			}
 
-			rep := &MReply{
-				Replica: r.Id,
-				Ballot:  r.ballot,
-				CmdId:   desc.cmdId,
-				Rep:     desc.val,
+			if sync {
+				rep := &MSyncReply{
+					Replica: r.Id,
+					Ballot:  r.ballot,
+					CmdId:   desc.cmdId,
+					Rep:     desc.val,
+				}
+				r.sender.SendToClient(desc.propose.ClientId, rep, r.cs.syncReplyRPC)
+			} else {
+				rep := &MReply{
+					Replica: r.Id,
+					Ballot:  r.ballot,
+					CmdId:   desc.cmdId,
+					Rep:     desc.val,
+				}
+				r.sender.SendToClient(desc.propose.ClientId, rep, r.cs.replyRPC)
 			}
-			r.sender.SendToClient(desc.propose.ClientId, rep, r.cs.replyRPC)
 		}
 
 		go func(nextSlot int) {
@@ -461,7 +492,7 @@ func (r *Replica) handleMsg(m interface{}, desc *commandDesc, slot int) bool {
 
 	case string:
 		if msg == "deliver" {
-			r.deliver(desc, slot)
+			r.deliver(desc, slot, false)
 		}
 
 	case int:

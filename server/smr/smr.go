@@ -94,7 +94,7 @@ func NewReplica(id, f int, addrs []string, thrifty, exec, lread, drep bool, ps m
 		PreferredPeerOrder: make([]int32, n),
 
 		State:       state.InitState(),
-		RPC:         fastrpc.NewTableId(GENERIC_SMR_BEACON_REPLY + 1),
+		RPC:         fastrpc.NewTableId(RPC_TABLE),
 		StableStore: nil,
 		Stats:       &Stats{make(map[string]int)},
 		Shutdown:    false,
@@ -208,7 +208,7 @@ func (r *Replica) SendMsg(peerId int32, code uint8, msg fastrpc.Serializable) {
 
 	w := r.PeerWriters[peerId]
 	if w == nil {
-		log.Printf("Connection to %d lost!\n", peerId)
+		log.Printf("Connection to %d lost!", peerId)
 		return
 	}
 	w.WriteByte(code)
@@ -222,7 +222,7 @@ func (r *Replica) SendClientMsg(id int32, code uint8, msg fastrpc.Serializable) 
 
 	w := r.ClientWriters[id]
 	if w == nil {
-		log.Printf("Connection to client %d lost!\n", id)
+		log.Printf("Connection to client %d lost!", id)
 		return
 	}
 	w.WriteByte(code)
@@ -236,7 +236,7 @@ func (r *Replica) SendMsgNoFlush(peerId int32, code uint8, msg fastrpc.Serializa
 
 	w := r.PeerWriters[peerId]
 	if w == nil {
-		log.Printf("Connection to %d lost!\n", peerId)
+		log.Printf("Connection to %d lost!", peerId)
 		return
 	}
 	w.WriteByte(code)
@@ -530,6 +530,20 @@ func (r *Replica) clientListener(conn net.Conn) {
 			r.M.Unlock()
 			writer.Write(b)
 			writer.Flush()
+
+		default:
+			p, exists := r.RPC.Get(msgType)
+			if exists {
+				obj := p.Obj.New()
+				if err = obj.Unmarshal(reader); err != nil {
+					break
+				}
+				go func() {
+					p.Chan <- obj
+				}()
+			} else {
+				log.Fatal("Error: received unknown client message ", msgType)
+			}
 		}
 	}
 

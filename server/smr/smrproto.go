@@ -17,6 +17,7 @@ const (
 	GENERIC_SMR_BEACON
 	GENERIC_SMR_BEACON_REPLY
 	STATS
+	RPC_TABLE
 )
 
 type Propose struct {

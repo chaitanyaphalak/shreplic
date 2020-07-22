@@ -82,7 +82,7 @@ func NewClientWithLog(maddr string, mport int,
 		LocalRead:  lread,
 		Leaderless: leaderless,
 
-		RPC:       fastrpc.NewTableId(smr.GENERIC_SMR_BEACON_REPLY + 1),
+		RPC:       fastrpc.NewTableId(smr.RPC_TABLE),
 		ResChan:   make(chan []byte, 8),
 		Waiting:   make(chan struct{}, 8),
 		ReadTable: false,
@@ -280,6 +280,17 @@ func (c *Client) Printf(format string, v ...interface{}) {
 	if c.Verbose {
 		c.logger.Printf(format, v...)
 	}
+}
+
+func (c *Client) SendMsg(rid int32, code uint8, msg fastrpc.Serializable) {
+	w := c.writers[rid]
+	if w == nil {
+		log.Printf("%d: no associated writer", rid)
+		return
+	}
+	w.WriteByte(code)
+	msg.Marshal(w)
+	w.Flush()
 }
 
 func (c *Client) execute(args smr.Propose) []byte {
