@@ -27,6 +27,7 @@ type Replica struct {
 	lastCmdSlot int
 
 	slots     cmap.ConcurrentMap
+	values    cmap.ConcurrentMap
 	proposes  cmap.ConcurrentMap
 	cmdDescs  cmap.ConcurrentMap
 	unsynced  cmap.ConcurrentMap
@@ -84,6 +85,7 @@ func NewReplica(rid int, addrs []string, exec, dr bool,
 		lastCmdSlot: 0,
 
 		slots:     cmap.New(),
+		values:    cmap.New(),
 		proposes:  cmap.New(),
 		cmdDescs:  cmap.New(),
 		unsynced:  cmap.New(),
@@ -200,11 +202,21 @@ func (r *Replica) run() {
 				r.getCmdDesc(b.CmdSlot, &tb)
 			}
 
+		case m := <-r.cs.commitChan:
+			commit := m.(*MCommit)
+			r.getCmdDesc(commit.CmdSlot, commit)
+
 		case m := <-r.cs.syncChan:
 			sync := m.(*MSync)
-			slot, exists := r.slots.Get(sync.CmdId.String())
+			val, exists := r.values.Get(sync.CmdId.String())
 			if exists {
-				r.getCmdDesc(slot.(int), sync)
+				rep := &MSyncReply{
+					Replica: r.Id,
+					Ballot:  r.ballot,
+					CmdId:   sync.CmdId,
+					Rep:     val.([]byte),
+				}
+				r.sender.SendToClient(sync.CmdId.ClientId, rep, r.cs.syncReplyRPC)
 			}
 		}
 	}
@@ -222,6 +234,7 @@ func (r *Replica) handlePropose(msg *smr.GPropose, desc *commandDesc, slot int) 
 		ClientId: msg.ClientId,
 		SeqNum:   msg.CommandId,
 	}
+	desc.cmdSlot = slot
 
 	acc := &MAccept{
 		Replica: r.Id,
@@ -231,7 +244,7 @@ func (r *Replica) handlePropose(msg *smr.GPropose, desc *commandDesc, slot int) 
 		CmdSlot: slot,
 	}
 
-	r.deliver(desc, slot, false)
+	r.deliver(desc, slot)
 	r.sender.SendToAll(acc, r.cs.acceptRPC)
 	r.handleAccept(acc, desc)
 }
@@ -270,32 +283,6 @@ func (r *Replica) handleAcceptAck(msg *MAcceptAck, desc *commandDesc) {
 	desc.acks.Add(msg.Replica, false, msg)
 }
 
-func (r *Replica) handleCommit(msg *MCommit, desc *commandDesc) {
-	if r.status != NORMAL || r.ballot != msg.Ballot {
-		return
-	}
-
-	desc.phase = COMMIT
-	r.unsynced.Remove(desc.cmdId.String())
-	r.deliver(desc, desc.cmdSlot, false)
-}
-
-func (r *Replica) handleSync(msg *MSync, desc *commandDesc) {
-	desc.afterPayload.Call(func() {
-		if desc.val != nil && r.delivered.Has(strconv.Itoa(desc.cmdSlot)) {
-			rep := &MSyncReply{
-				Replica: r.Id,
-				Ballot:  r.ballot,
-				CmdId:   desc.cmdId,
-				Rep:     desc.val,
-			}
-			r.sender.SendToClient(desc.propose.ClientId, rep, r.cs.syncReplyRPC)
-		} else {
-			r.deliver(desc, desc.cmdSlot, true)
-		}
-	})
-}
-
 func getAcksHandler(r *Replica, desc *commandDesc) smr.MsgSetHandler {
 	return func(_ interface{}, _ []interface{}) {
 		commit := &MCommit{
@@ -304,7 +291,18 @@ func getAcksHandler(r *Replica, desc *commandDesc) smr.MsgSetHandler {
 			CmdSlot: desc.cmdSlot,
 		}
 		r.sender.SendToAll(commit, r.cs.commitRPC)
+		r.handleCommit(commit, desc)
 	}
+}
+
+func (r *Replica) handleCommit(msg *MCommit, desc *commandDesc) {
+	if r.status != NORMAL || r.ballot != msg.Ballot || desc.phase == COMMIT {
+		return
+	}
+
+	desc.phase = COMMIT
+	r.unsynced.Remove(desc.cmdId.String())
+	r.deliver(desc, desc.cmdSlot)
 }
 
 func (r *Replica) ok(cmd state.Command) uint8 {
@@ -318,7 +316,7 @@ func (r *Replica) ok(cmd state.Command) uint8 {
 	return ok
 }
 
-func (r *Replica) deliver(desc *commandDesc, slot int, sync bool) {
+func (r *Replica) deliver(desc *commandDesc, slot int) {
 	desc.afterPayload.Call(func() {
 
 		if r.delivered.Has(strconv.Itoa(slot)) || !r.Exec {
@@ -347,40 +345,34 @@ func (r *Replica) deliver(desc *commandDesc, slot int, sync bool) {
 		}
 
 		if r.isLeader {
-			if r.ok(desc.cmd) == FALSE {
+			if r.ok(desc.cmd) == FALSE && !r.values.Has(desc.cmdId.String()) {
 				return
 			}
 
-			if sync {
-				rep := &MSyncReply{
-					Replica: r.Id,
-					Ballot:  r.ballot,
-					CmdId:   desc.cmdId,
-					Rep:     desc.val,
-				}
-				r.sender.SendToClient(desc.propose.ClientId, rep, r.cs.syncReplyRPC)
-			} else {
-				rep := &MReply{
-					Replica: r.Id,
-					Ballot:  r.ballot,
-					CmdId:   desc.cmdId,
-					Rep:     desc.val,
-				}
-				r.sender.SendToClient(desc.propose.ClientId, rep, r.cs.replyRPC)
+			r.values.Set(desc.cmdId.String(), desc.val)
+
+			rep := &MReply{
+				Replica: r.Id,
+				Ballot:  r.ballot,
+				CmdId:   desc.cmdId,
+				Rep:     desc.val,
 			}
+			r.sender.SendToClient(desc.propose.ClientId, rep, r.cs.replyRPC)
 		}
 
-		go func(nextSlot int) {
-			r.deliverChan <- nextSlot
-		}(slot + 1)
-		desc.msgs <- slot
-		r.delivered.Set(strconv.Itoa(slot), struct{}{})
-		if desc.seq {
-			for {
-				switch hSlot := (<-desc.msgs).(type) {
-				case int:
-					r.handleMsg(hSlot, desc, slot)
-					return
+		if desc.phase == COMMIT {
+			desc.msgs <- slot
+			r.delivered.Set(strconv.Itoa(slot), struct{}{})
+			go func(nextSlot int) {
+				r.deliverChan <- nextSlot
+			}(slot + 1)
+			if desc.seq {
+				for {
+					switch hSlot := (<-desc.msgs).(type) {
+					case int:
+						r.handleMsg(hSlot, desc, slot)
+						return
+					}
 				}
 			}
 		}
@@ -490,12 +482,9 @@ func (r *Replica) handleMsg(m interface{}, desc *commandDesc, slot int) bool {
 			r.handleCommit(msg, desc)
 		}
 
-	case *MSync:
-		r.handleSync(msg, desc)
-
 	case string:
 		if msg == "deliver" {
-			r.deliver(desc, slot, false)
+			r.deliver(desc, slot)
 		}
 
 	case int:
