@@ -14,12 +14,13 @@ type Client struct {
 
 	fastAndSlowAcks *smr.MsgSet
 
-	N      int
-	AQ     smr.Majority
-	cs     CommunicationSupply
-	val    []byte
-	ready  chan struct{}
-	ballot int32
+	N         int
+	AQ        smr.Majority
+	cs        CommunicationSupply
+	val       []byte
+	ready     chan struct{}
+	ballot    int32
+	delivered map[int32]struct{}
 }
 
 func NewClient(maddr, collocated string, mport, reqNum, writes, psize, conflict int,
@@ -38,11 +39,12 @@ func NewClient(maddr, collocated string, mport, reqNum, writes, psize, conflict 
 		SimpleClient: base.NewSimpleClient(maddr, collocated, mport, reqNum, writes,
 			psize, conflict, fast, lread, leaderless, verbose, logger),
 
-		N:      *repNum,
-		AQ:     smr.NewMajorityOf(*repNum),
-		val:    nil,
-		ready:  make(chan struct{}, 1),
-		ballot: -1,
+		N:         *repNum,
+		AQ:        smr.NewMajorityOf(*repNum),
+		val:       nil,
+		ready:     make(chan struct{}, 1),
+		ballot:    -1,
+		delivered: make(map[int32]struct{}),
 	}
 
 	c.ReadTable = true
@@ -67,8 +69,7 @@ func (c *Client) reinitFastAndSlowAcks() {
 		}
 		leaderFastAck := leaderMsg.(*MFastAck)
 		fastAck := msg.(*MFastAck)
-		return fastAck.Dep == nil ||
-			(Dep(leaderFastAck.Dep)).Equals(fastAck.Dep)
+		return fastAck.Dep == nil || (Dep(leaderFastAck.Dep)).Equals(fastAck.Dep)
 	}
 
 	free := func(msg interface{}) {
@@ -160,6 +161,12 @@ func (c *Client) handleFastAndSlowAcks(leaderMsg interface{}, msgs []interface{}
 	if leaderMsg == nil {
 		return
 	}
+
+	seqNum := leaderMsg.(*MFastAck).CmdId.SeqNum
+	if _, exists := c.delivered[seqNum]; exists {
+		return
+	}
+	c.delivered[seqNum] = struct{}{}
 
 	c.ResChan <- c.val
 	c.ready <- struct{}{}

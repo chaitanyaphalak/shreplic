@@ -43,6 +43,12 @@ func NewBatcher(r *Replica, size int,
 					}},
 				}
 				is := map[CommandId]int{fastAck.CmdId: 0}
+				fastAckClientMsgs := make(map[CommandId]MFastAck)
+				slowAckClientMsgs := make(map[CommandId]MLightSlowAck)
+
+				if op.sendToClient {
+					fastAckClientMsgs[fastAck.CmdId] = *fastAck
+				}
 
 				acks.FastAcks[0] = *fastAck
 				freeFastAck(fastAck)
@@ -59,6 +65,10 @@ func NewBatcher(r *Replica, size int,
 						})
 					} else {
 						ballot = -1
+					}
+
+					if opP.sendToClient {
+						fastAckClientMsgs[f.CmdId] = *f
 					}
 					freeFastAck(f)
 				}
@@ -81,6 +91,14 @@ func NewBatcher(r *Replica, size int,
 					} else {
 						ballot = -1
 					}
+
+					if opP.sendToClient {
+						_, exists := fastAckClientMsgs[s.CmdId]
+						if exists {
+							delete(fastAckClientMsgs, s.CmdId)
+						}
+						slowAckClientMsgs[s.CmdId] = *s
+					}
 					freeSlowAck(s)
 				}
 
@@ -96,8 +114,14 @@ func NewBatcher(r *Replica, size int,
 					rpc = r.cs.acksRPC
 				}
 				r.sender.SendToAll(m, rpc)
-				if op.sendToClient {
-					r.sender.SendToClient(op.cid, m, rpc)
+
+				for _, f := range fastAckClientMsgs {
+					cf := f
+					r.sender.SendToClient(cf.CmdId.ClientId, &cf, r.cs.fastAckRPC)
+				}
+				for _, s := range slowAckClientMsgs {
+					cs := s
+					r.sender.SendToClient(cs.CmdId.ClientId, &cs, r.cs.lightSlowAckRPC)
 				}
 
 			case op := <-b.lightSlowAcks:
@@ -120,6 +144,12 @@ func NewBatcher(r *Replica, size int,
 					}},
 				}
 				is := map[CommandId]int{slowAck.CmdId: 0}
+				fastAckClientMsgs := make(map[CommandId]MFastAck)
+				slowAckClientMsgs := make(map[CommandId]MLightSlowAck)
+
+				if op.sendToClient {
+					slowAckClientMsgs[slowAck.CmdId] = *slowAck
+				}
 
 				acks.LightSlowAcks[0] = *slowAck
 				freeSlowAck(slowAck)
@@ -136,6 +166,10 @@ func NewBatcher(r *Replica, size int,
 						})
 					} else {
 						ballot = -1
+					}
+
+					if opP.sendToClient {
+						slowAckClientMsgs[s.CmdId] = *s
 					}
 					freeSlowAck(s)
 				}
@@ -156,6 +190,13 @@ func NewBatcher(r *Replica, size int,
 					} else {
 						ballot = -1
 					}
+
+					if opP.sendToClient {
+						_, exists := slowAckClientMsgs[f.CmdId]
+						if !exists {
+							fastAckClientMsgs[f.CmdId] = *f
+						}
+					}
 					freeFastAck(f)
 				}
 
@@ -171,8 +212,14 @@ func NewBatcher(r *Replica, size int,
 					rpc = r.cs.acksRPC
 				}
 				r.sender.SendToAll(m, rpc)
-				if op.sendToClient {
-					r.sender.SendToClient(op.cid, m, rpc)
+
+				for _, f := range fastAckClientMsgs {
+					cf := f
+					r.sender.SendToClient(cf.CmdId.ClientId, &cf, r.cs.fastAckRPC)
+				}
+				for _, s := range slowAckClientMsgs {
+					cs := s
+					r.sender.SendToClient(cs.CmdId.ClientId, &cs, r.cs.lightSlowAckRPC)
 				}
 			}
 		}
