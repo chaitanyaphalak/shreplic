@@ -52,7 +52,7 @@ type Client struct {
 	readers []*bufio.Reader
 	writers []*bufio.Writer
 
-	logger         *log.Logger
+	Logger         *log.Logger
 	masterPort     int
 	masterAddr     string
 	replicaList    []string
@@ -98,7 +98,7 @@ func NewClientWithLog(maddr string, mport int,
 		readers: nil,
 		writers: nil,
 
-		logger:         logger,
+		Logger:         logger,
 		masterPort:     mport,
 		masterAddr:     maddr,
 		replicaList:    nil,
@@ -119,7 +119,7 @@ func (c *Client) Connect() error {
 	defer master.Close()
 
 	c.Println("Getting list of replicas...")
-	rl, err := askMaster(master, "GetReplicaList", c.logger)
+	rl, err := askMaster(master, "GetReplicaList", c.Logger)
 	if err != nil {
 		return err
 	}
@@ -141,7 +141,7 @@ func (c *Client) Connect() error {
 
 	if !c.Leaderless {
 		c.Println("Getting leader from master...")
-		gl, err := askMaster(master, "GetLeader", c.logger)
+		gl, err := askMaster(master, "GetLeader", c.Logger)
 		if err != nil {
 			return err
 		}
@@ -166,7 +166,7 @@ func (c *Client) Connect() error {
 
 	for _, i := range toConnect {
 		c.Println("Connection to", i, "->", c.replicaList[i])
-		c.servers[i], err = dial(c.replicaList[i], false, c.logger)
+		c.servers[i], err = dial(c.replicaList[i], false, c.Logger)
 		if err != nil {
 			return err
 		}
@@ -279,13 +279,13 @@ func (c *Client) ProposeReplyFrom(rid int) (*smr.ProposeReplyTS, error) {
 
 func (c *Client) Println(v ...interface{}) {
 	if c.Verbose {
-		c.logger.Println(v...)
+		c.Logger.Println(v...)
 	}
 }
 
 func (c *Client) Printf(format string, v ...interface{}) {
 	if c.Verbose {
-		c.logger.Printf(format, v...)
+		c.Logger.Printf(format, v...)
 	}
 }
 
@@ -329,7 +329,7 @@ func (c *Client) execute(args smr.Propose) []byte {
 }
 
 func (c *Client) findClosestReplica(alive []bool) error {
-	c.logger.Println("Pinging all replicas...")
+	c.Logger.Println("Pinging all replicas...")
 
 	found := false
 	minLatency := math.MaxFloat64
@@ -352,7 +352,7 @@ func (c *Client) findClosestReplica(alive []bool) error {
 		out, err := exec.Command("ping", addr, "-c 3", "-q").Output()
 		if err == nil {
 			latency, _ := strconv.ParseFloat(strings.Split(string(out), "/")[4], 64)
-			c.logger.Println(i, "->", latency)
+			c.Logger.Println(i, "->", latency)
 
 			if minLatency > latency {
 				if !found {
@@ -364,7 +364,7 @@ func (c *Client) findClosestReplica(alive []bool) error {
 				maxLatency = latency
 			}
 		} else {
-			c.logger.Println("Cannot ping", c.replicaList[i])
+			c.Logger.Println("Cannot ping", c.replicaList[i])
 			return err
 		}
 	}
@@ -376,7 +376,7 @@ func (c *Client) findClosestReplica(alive []bool) error {
 
 func (c *Client) dialMaster() (*rpc.Client, error) {
 	addr := fmt.Sprintf("%s:%d", c.masterAddr, c.masterPort)
-	conn, err := dial(addr, true, c.logger)
+	conn, err := dial(addr, true, c.Logger)
 	if err != nil {
 		return nil, err
 	}
