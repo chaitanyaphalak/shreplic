@@ -102,6 +102,15 @@ func NewBatcher(r *Replica, size int,
 					freeSlowAck(s)
 				}
 
+				for _, f := range fastAckClientMsgs {
+					cf := f
+					r.sender.SendToClient(cf.CmdId.ClientId, &cf, r.cs.fastAckRPC)
+				}
+				for _, s := range slowAckClientMsgs {
+					cs := s
+					r.sender.SendToClient(cs.CmdId.ClientId, &cs, r.cs.lightSlowAckRPC)
+				}
+
 				var (
 					m   fastrpc.Serializable
 					rpc uint8
@@ -115,14 +124,6 @@ func NewBatcher(r *Replica, size int,
 				}
 				r.sender.SendToAll(m, rpc)
 
-				for _, f := range fastAckClientMsgs {
-					cf := f
-					r.sender.SendToClient(cf.CmdId.ClientId, &cf, r.cs.fastAckRPC)
-				}
-				for _, s := range slowAckClientMsgs {
-					cs := s
-					r.sender.SendToClient(cs.CmdId.ClientId, &cs, r.cs.lightSlowAckRPC)
-				}
 
 			case op := <-b.lightSlowAcks:
 				slowAck := op.msg.(*MLightSlowAck)
@@ -200,6 +201,15 @@ func NewBatcher(r *Replica, size int,
 					freeFastAck(f)
 				}
 
+				for _, f := range fastAckClientMsgs {
+					cf := f
+					r.sender.SendToClient(cf.CmdId.ClientId, &cf, r.cs.fastAckRPC)
+				}
+				for _, s := range slowAckClientMsgs {
+					cs := s
+					r.sender.SendToClient(cs.CmdId.ClientId, &cs, r.cs.lightSlowAckRPC)
+				}
+
 				var (
 					m   fastrpc.Serializable
 					rpc uint8
@@ -212,15 +222,6 @@ func NewBatcher(r *Replica, size int,
 					rpc = r.cs.acksRPC
 				}
 				r.sender.SendToAll(m, rpc)
-
-				for _, f := range fastAckClientMsgs {
-					cf := f
-					r.sender.SendToClient(cf.CmdId.ClientId, &cf, r.cs.fastAckRPC)
-				}
-				for _, s := range slowAckClientMsgs {
-					cs := s
-					r.sender.SendToClient(cs.CmdId.ClientId, &cs, r.cs.lightSlowAckRPC)
-				}
 			}
 		}
 	}()
