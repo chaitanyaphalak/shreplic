@@ -19,7 +19,7 @@ type SendArg struct {
 	rpc      uint8
 	quorum   Quorum
 	sendType SendType
-	id int32
+	id       int32
 	free     func()
 }
 

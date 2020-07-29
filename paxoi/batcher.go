@@ -124,7 +124,6 @@ func NewBatcher(r *Replica, size int,
 				}
 				r.sender.SendToAll(m, rpc)
 
-
 			case op := <-b.lightSlowAcks:
 				slowAck := op.msg.(*MLightSlowAck)
 
