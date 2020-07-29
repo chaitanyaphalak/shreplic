@@ -17,6 +17,7 @@ type SimpleClient struct {
 	*Client
 
 	WaitResponse func() error
+	GetClientKey func() state.Key
 
 	reqNum   int
 	writes   int
@@ -33,6 +34,7 @@ func NewSimpleClient(maddr, collocated string,
 		Client: NewClientWithLog(maddr, mport, fast, lread, leaderless, verbose, logger),
 
 		WaitResponse: nil,
+		GetClientKey: nil,
 
 		reqNum:   reqNum,
 		writes:   writes,
@@ -62,8 +64,14 @@ func (c *SimpleClient) Run() error {
 		beforeTotal time.Time
 	)
 	clientKey := state.Key(uint64(uuid.New().Time()))
+	getKey := func() state.Key {
+		if c.GetClientKey == nil {
+			return clientKey
+		}
+		return c.GetClientKey()
+	}
 	for i := 0; i < c.reqNum+1; i++ {
-		key := clientKey
+		key := getKey()
 		if randomTrue(c.conflict) {
 			key = state.Key(42)
 		}

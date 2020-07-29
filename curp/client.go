@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/vonaka/shreplic/client/base"
 	"github.com/vonaka/shreplic/server/smr"
 	"github.com/vonaka/shreplic/state"
@@ -56,6 +57,9 @@ func NewClient(maddr, collocated string, mport, reqNum, writes, psize, conflict 
 	}
 
 	c.ReadTable = true
+	c.GetClientKey = func() state.Key {
+		return state.Key(uint64(uuid.New().Time()))
+	}
 	c.WaitResponse = func() error {
 		after := time.Duration(c.MaxLatency*float64(c.Q.Size())) * time.Millisecond
 		cmdId := CommandId{
