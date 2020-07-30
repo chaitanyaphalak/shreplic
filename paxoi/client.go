@@ -7,6 +7,7 @@ import (
 
 	"github.com/vonaka/shreplic/client/base"
 	"github.com/vonaka/shreplic/server/smr"
+	"github.com/vonaka/shreplic/state"
 )
 
 type Client struct {
@@ -17,7 +18,7 @@ type Client struct {
 	N         int
 	AQ        smr.Majority
 	cs        CommunicationSupply
-	val       []byte
+	val       state.Value
 	ready     chan struct{}
 	ballot    int32
 	delivered map[int32]struct{}
@@ -168,6 +169,7 @@ func (c *Client) handleFastAndSlowAcks(leaderMsg interface{}, msgs []interface{}
 	}
 	c.delivered[seqNum] = struct{}{}
 
+	c.Println("Returning:", c.val.String())
 	c.ResChan <- c.val
 	c.ready <- struct{}{}
 }
