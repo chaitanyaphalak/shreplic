@@ -35,6 +35,7 @@ type Client struct {
 	CollocatedId  int
 	LastSubmitter int
 
+	Ping       []float64
 	MinLatency float64
 	MaxLatency float64
 
@@ -97,6 +98,8 @@ func NewClientWithLog(maddr string, mport int,
 		servers: nil,
 		readers: nil,
 		writers: nil,
+
+		Ping: []float64{},
 
 		Logger:         logger,
 		masterPort:     mport,
@@ -353,6 +356,7 @@ func (c *Client) findClosestReplica(alive []bool) error {
 		if err == nil {
 			latency, _ := strconv.ParseFloat(strings.Split(string(out), "/")[4], 64)
 			c.Logger.Println(i, "->", latency)
+			c.Ping = append(c.Ping, latency)
 
 			if minLatency > latency {
 				if !found {

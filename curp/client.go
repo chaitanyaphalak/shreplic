@@ -3,6 +3,7 @@ package curp
 import (
 	"flag"
 	"log"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -60,8 +61,14 @@ func NewClient(maddr, collocated string, mport, reqNum, writes, psize, conflict 
 	c.GetClientKey = func() state.Key {
 		return state.Key(uint64(uuid.New().Time()))
 	}
+
 	c.WaitResponse = func() error {
-		after := time.Duration(c.MaxLatency*float64(c.Q.Size())) * time.Millisecond
+		sort.Float64Slice(c.Ping).Sort()
+		waitTime := time.Duration(c.Ping[c.Q.Size()-1]*2.05) * time.Millisecond
+		if waitTime < 100*time.Millisecond {
+			waitTime = 100 * time.Millisecond
+		}
+
 		cmdId := CommandId{
 			ClientId: c.LastPropose.ClientId,
 			SeqNum:   c.LastPropose.CommandId,
@@ -73,7 +80,7 @@ func NewClient(maddr, collocated string, mport, reqNum, writes, psize, conflict 
 			select {
 			case <-c.ready:
 				stop = true
-			case <-time.After(after):
+			case <-time.After(waitTime):
 				if c.leader != -1 {
 					sync := &MSync{
 						CmdId: cmdId,
