@@ -289,17 +289,15 @@ func (r *Replica) deliver(desc *commandDesc, slot int) {
 		}(slot + 1)
 		desc.msgs <- slot
 
-		if !desc.propose.Collocated || !r.Dreply {
-			return
+		if desc.propose.Collocated && r.Dreply {
+			rep := &smr.ProposeReplyTS{
+				OK:        smr.TRUE,
+				CommandId: desc.propose.CommandId,
+				Value:     v,
+				Timestamp: desc.propose.Timestamp,
+			}
+			r.ReplyProposeTS(rep, desc.propose.Reply, desc.propose.Mutex)
 		}
-
-		rep := &smr.ProposeReplyTS{
-			OK:        smr.TRUE,
-			CommandId: desc.propose.CommandId,
-			Value:     v,
-			Timestamp: desc.propose.Timestamp,
-		}
-		r.ReplyProposeTS(rep, desc.propose.Reply, desc.propose.Mutex)
 
 		if desc.seq {
 			for {
