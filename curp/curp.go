@@ -31,6 +31,7 @@ type Replica struct {
 	proposes  cmap.ConcurrentMap
 	cmdDescs  cmap.ConcurrentMap
 	unsynced  cmap.ConcurrentMap
+	executed  cmap.ConcurrentMap
 	delivered cmap.ConcurrentMap
 
 	sender  smr.Sender
@@ -89,6 +90,7 @@ func NewReplica(rid int, addrs []string, exec, dr bool,
 		proposes:  cmap.New(),
 		cmdDescs:  cmap.New(),
 		unsynced:  cmap.New(),
+		executed:  cmap.New(),
 		delivered: cmap.New(),
 		history:   make([]commandStaticDesc, HISTORY_SIZE),
 
@@ -318,8 +320,8 @@ func (r *Replica) ok(cmd state.Command) uint8 {
 
 func (r *Replica) deliver(desc *commandDesc, slot int) {
 	desc.afterPayload.Call(func() {
-
-		if r.delivered.Has(strconv.Itoa(slot)) || !r.Exec {
+		slotStr := strconv.Itoa(slot)
+		if r.delivered.Has(slotStr) || !r.Exec {
 			return
 		}
 
@@ -327,7 +329,7 @@ func (r *Replica) deliver(desc *commandDesc, slot int) {
 			return
 		}
 
-		if slot > 0 && !r.delivered.Has(strconv.Itoa(slot-1)) {
+		if slot > 0 && !r.executed.Has(strconv.Itoa(slot-1)) {
 			return
 		}
 
@@ -342,14 +344,16 @@ func (r *Replica) deliver(desc *commandDesc, slot int) {
 		if desc.val == nil {
 			dlog.Printf("Executing " + desc.cmd.String())
 			desc.val = desc.cmd.Execute(r.State)
+			r.executed.Set(slotStr, struct{}{})
+			go func(nextSlot int) {
+				r.deliverChan <- nextSlot
+			}(slot + 1)
 		}
 
 		if r.isLeader {
-			if r.ok(desc.cmd) == FALSE && !r.values.Has(desc.cmdId.String()) {
+			if r.ok(desc.cmd) == FALSE {
 				return
 			}
-
-			r.values.Set(desc.cmdId.String(), desc.val)
 
 			rep := &MReply{
 				Replica: r.Id,
@@ -363,9 +367,6 @@ func (r *Replica) deliver(desc *commandDesc, slot int) {
 		if desc.phase == COMMIT {
 			desc.msgs <- slot
 			r.delivered.Set(strconv.Itoa(slot), struct{}{})
-			go func(nextSlot int) {
-				r.deliverChan <- nextSlot
-			}(slot + 1)
 			if desc.seq {
 				for {
 					switch hSlot := (<-desc.msgs).(type) {
@@ -492,7 +493,9 @@ func (r *Replica) handleMsg(m interface{}, desc *commandDesc, slot int) bool {
 		r.history[msg].phase = desc.phase
 		r.history[msg].cmd = desc.cmd
 		desc.active = false
-		r.cmdDescs.Remove(strconv.Itoa(slot))
+		slotStr := strconv.Itoa(slot)
+		r.values.Set(desc.cmdId.String(), desc.val)
+		r.cmdDescs.Remove(slotStr)
 		r.freeDesc(desc)
 		return true
 	}
