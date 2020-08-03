@@ -51,7 +51,6 @@ func NewClient(maddr, collocated string, mport, reqNum, writes, psize, conflict 
 	c.ReadTable = true
 	c.WaitResponse = func() error {
 		<-c.ready
-		c.reinitFastAndSlowAcks()
 		return nil
 	}
 
@@ -172,6 +171,7 @@ func (c *Client) handleFastAndSlowAcks(leaderMsg interface{}, msgs []interface{}
 	c.Println("Returning:", c.val.String())
 	c.ResChan <- c.val
 	c.ready <- struct{}{}
+	c.reinitFastAndSlowAcks()
 }
 
 func (c *Client) handleReply(r *MReply) {
