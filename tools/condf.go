@@ -27,6 +27,9 @@ func (cf *CondF) ReinitCondF(cond func() bool) *CondF {
 
 func (cf *CondF) Call(f func()) bool {
 	if cf.cond() {
+		if cf.wanna {
+			cf.fun()
+		}
 		f()
 		cf.fun = func() {}
 		cf.wanna = false
@@ -96,6 +99,9 @@ func (cf *OptCondF) ReinitCondF(cond func() bool) *OptCondF {
 
 func (cf *OptCondF) Call(f func()) bool {
 	if cf.cond() {
+		for i := 0; i < cf.funs_num; i++ {
+			cf.funs[i]()
+		}
 		f()
 		cf.funs_num = 0
 		return true
