@@ -27,6 +27,7 @@ type Replica struct {
 	lastCmdSlot int
 
 	slots     map[CommandId]int
+	synced    cmap.ConcurrentMap
 	values    cmap.ConcurrentMap
 	proposes  cmap.ConcurrentMap
 	cmdDescs  cmap.ConcurrentMap
@@ -86,6 +87,7 @@ func NewReplica(rid int, addrs []string, exec, dr bool,
 		lastCmdSlot: 0,
 
 		slots:     make(map[CommandId]int),
+		synced:    cmap.New(),
 		values:    cmap.New(),
 		proposes:  cmap.New(),
 		cmdDescs:  cmap.New(),
@@ -181,7 +183,7 @@ func (r *Replica) run() {
 				if exists {
 					r.getCmdDesc(slot, "deliver")
 				} else {
-					r.unsynced.Set(cmdId.String(), propose.Command)
+					r.unsync(propose.Command)
 				}
 			}
 
@@ -272,7 +274,7 @@ func (r *Replica) handleAccept(msg *MAccept, desc *commandDesc) {
 	if r.isLeader {
 		r.handleAcceptAck(ack, desc)
 	} else {
-		r.unsynced.Remove(desc.cmdId.String())
+		r.sync(desc.cmdId, desc.cmd)
 		r.sender.SendTo(msg.Replica, ack, r.cs.acceptAckRPC)
 	}
 }
@@ -303,19 +305,50 @@ func (r *Replica) handleCommit(msg *MCommit, desc *commandDesc) {
 	}
 
 	desc.phase = COMMIT
-	r.unsynced.Remove(desc.cmdId.String())
+	desc.afterPayload.Call(func() {
+		r.sync(desc.cmdId, desc.cmd)
+	})
 	r.deliver(desc, desc.cmdSlot)
 }
 
+func (r *Replica) sync(cmdId CommandId, cmd state.Command) {
+	key := strconv.FormatInt(int64(cmd.K), 10)
+	r.unsynced.Upsert(key, nil,
+		func(exists bool, mapV, _ interface{}) interface{} {
+			if exists {
+				if r.synced.Has(cmdId.String()) {
+					return mapV
+				}
+				r.synced.Set(cmdId.String(), struct{}{})
+				v := mapV.(int) - 1
+				if v < 0 {
+					v = 0
+				}
+				return v
+			}
+			r.synced.Set(cmdId.String(), struct{}{})
+			return 0
+		})
+}
+
+func (r *Replica) unsync(cmd state.Command) {
+	key := strconv.FormatInt(int64(cmd.K), 10)
+	r.unsynced.Upsert(key, nil,
+		func(exists bool, mapV, _ interface{}) interface{} {
+			if exists {
+				return mapV.(int) + 1
+			}
+			return 1
+		})
+}
+
 func (r *Replica) ok(cmd state.Command) uint8 {
-	var ok = TRUE
-	r.unsynced.IterCb(func(_ string, v interface{}) {
-		cmdPrime := v.(state.Command)
-		if state.Conflict(&cmd, &cmdPrime) {
-			ok = FALSE
-		}
-	})
-	return ok
+	key := strconv.FormatInt(int64(cmd.K), 10)
+	v, exists := r.unsynced.Get(key)
+	if exists && v.(int) > 0 {
+		return FALSE
+	}
+	return TRUE
 }
 
 func (r *Replica) deliver(desc *commandDesc, slot int) {
