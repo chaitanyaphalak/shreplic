@@ -26,7 +26,7 @@ type Replica struct {
 	isLeader    bool
 	lastCmdSlot int
 
-	slots     cmap.ConcurrentMap
+	slots     map[CommandId]int
 	values    cmap.ConcurrentMap
 	proposes  cmap.ConcurrentMap
 	cmdDescs  cmap.ConcurrentMap
@@ -85,7 +85,7 @@ func NewReplica(rid int, addrs []string, exec, dr bool,
 		isLeader:    false,
 		lastCmdSlot: 0,
 
-		slots:     cmap.New(),
+		slots:     make(map[CommandId]int),
 		values:    cmap.New(),
 		proposes:  cmap.New(),
 		cmdDescs:  cmap.New(),
@@ -177,9 +177,9 @@ func (r *Replica) run() {
 					Ok:      r.ok(propose.Command),
 				}
 				r.sender.SendToClient(propose.ClientId, recAck, r.cs.recordAckRPC)
-				slot, exists := r.slots.Get(cmdId.String())
+				slot, exists := r.slots[cmdId]
 				if exists {
-					r.getCmdDesc(slot.(int), "deliver")
+					r.getCmdDesc(slot, "deliver")
 				} else {
 					r.unsynced.Set(cmdId.String(), propose.Command)
 				}
@@ -187,6 +187,7 @@ func (r *Replica) run() {
 
 		case m := <-r.cs.acceptChan:
 			acc := m.(*MAccept)
+			r.slots[acc.CmdId] = acc.CmdSlot
 			r.getCmdDesc(acc.CmdSlot, acc)
 
 		case m := <-r.cs.acceptAckChan:
@@ -260,7 +261,6 @@ func (r *Replica) handleAccept(msg *MAccept, desc *commandDesc) {
 	desc.cmdId = msg.CmdId
 	desc.cmdSlot = msg.CmdSlot
 
-	r.slots.Set(desc.cmdId.String(), desc.cmdSlot)
 	defer desc.afterPayload.Recall()
 
 	ack := &MAcceptAck{

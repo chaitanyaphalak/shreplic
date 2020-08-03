@@ -5,7 +5,6 @@ import (
 	"log"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -20,15 +19,16 @@ type Client struct {
 	acks *smr.MsgSet
 
 	N         int
+	t         *Timer
 	Q         smr.ThreeQuarters
 	cs        CommunicationSupply
 	val       state.Value
 	ready     chan struct{}
 	leader    int32
 	ballot    int32
+	waitTime  time.Duration
 	delivered map[int32]struct{}
 
-	lock      sync.Mutex
 	lastCmdId CommandId
 }
 
@@ -49,6 +49,7 @@ func NewClient(maddr, collocated string, mport, reqNum, writes, psize, conflict 
 			psize, conflict, fast, lread, leaderless, verbose, logger),
 
 		N:         *repNum,
+		t:         NewTimer(),
 		Q:         smr.NewThreeQuartersOf(*repNum),
 		val:       nil,
 		ready:     make(chan struct{}, 1),
@@ -57,39 +58,29 @@ func NewClient(maddr, collocated string, mport, reqNum, writes, psize, conflict 
 		delivered: make(map[int32]struct{}),
 	}
 
+	c.lastCmdId = CommandId{
+		ClientId: c.ClientId,
+		SeqNum:   0,
+	}
+
 	c.ReadTable = true
 	c.GetClientKey = func() state.Key {
 		return state.Key(uint64(uuid.New().Time()))
 	}
 
+	first := true
 	c.WaitResponse = func() error {
-		sort.Float64Slice(c.Ping).Sort()
-		waitTime := time.Duration(c.Ping[c.Q.Size()-1]*2.05) * time.Millisecond
-		if waitTime < 100*time.Millisecond {
-			waitTime = 100 * time.Millisecond
-		}
-
-		cmdId := CommandId{
-			ClientId: c.LastPropose.ClientId,
-			SeqNum:   c.LastPropose.CommandId,
-		}
-		c.lock.Lock()
-		c.lastCmdId = cmdId
-		c.lock.Unlock()
-		for stop := false; !stop; {
-			select {
-			case <-c.ready:
-				stop = true
-			case <-time.After(waitTime):
-				if c.leader != -1 {
-					sync := &MSync{
-						CmdId: cmdId,
-					}
-					c.SendMsg(c.leader, c.cs.syncRPC, sync)
-				}
+		if first {
+			sort.Float64Slice(c.Ping).Sort()
+			waitTime := time.Duration(c.Ping[c.Q.Size()-1]*2.05+25) * time.Millisecond
+			if waitTime < 100*time.Millisecond {
+				waitTime = 100 * time.Millisecond
 			}
+			c.waitTime = waitTime
+			c.t.Start(waitTime)
+			first = false
 		}
-		c.reinitAcks()
+		<-c.ready
 		return nil
 	}
 
@@ -115,15 +106,32 @@ func (c *Client) handleMsgs() {
 		select {
 		case m := <-c.cs.replyChan:
 			rep := m.(*MReply)
-			c.handleReply(rep)
+			if rep.CmdId == c.lastCmdId {
+				c.handleReply(rep)
+			}
 
 		case m := <-c.cs.recordAckChan:
 			recAck := m.(*MRecordAck)
-			c.handleRecordAck(recAck, false)
+			if recAck.CmdId == c.lastCmdId {
+				c.handleRecordAck(recAck, false)
+			}
 
 		case m := <-c.cs.syncReplyChan:
 			rep := m.(*MSyncReply)
-			c.handleSyncReply(rep)
+			if rep.CmdId == c.lastCmdId {
+				c.handleSyncReply(rep)
+			}
+
+		case needSync := <-c.t.c:
+			if needSync && c.leader != -1 {
+				if _, exists := c.delivered[c.lastCmdId.SeqNum]; exists {
+					return
+				}
+				sync := &MSync{
+					CmdId: c.lastCmdId,
+				}
+				c.SendMsg(c.leader, c.cs.syncRPC, sync)
+			}
 		}
 	}
 }
@@ -175,17 +183,14 @@ func (c *Client) handleSyncReply(rep *MSyncReply) {
 	}
 	c.leader = rep.Replica
 
-	c.lock.Lock()
-	if c.lastCmdId == rep.CmdId {
-		c.lock.Unlock()
-		c.val = state.Value(rep.Rep)
-		c.delivered[rep.CmdId.SeqNum] = struct{}{}
-		c.Println("Returning:", c.val.String())
-		c.ResChan <- c.val
-		c.ready <- struct{}{}
-	} else {
-		c.lock.Unlock()
-	}
+	c.val = state.Value(rep.Rep)
+	c.delivered[rep.CmdId.SeqNum] = struct{}{}
+	c.lastCmdId.SeqNum++
+	c.Println("Returning:", c.val.String())
+	c.ResChan <- c.val
+	c.ready <- struct{}{}
+	c.reinitAcks()
+	c.t.Reset(c.waitTime)
 }
 
 func (c *Client) handleAcks(leaderMsg interface{}, msgs []interface{}) {
@@ -194,8 +199,10 @@ func (c *Client) handleAcks(leaderMsg interface{}, msgs []interface{}) {
 	}
 
 	c.delivered[leaderMsg.(*MRecordAck).CmdId.SeqNum] = struct{}{}
-
+	c.lastCmdId.SeqNum++
 	c.Println("Returning:", c.val.String())
 	c.ResChan <- c.val
 	c.ready <- struct{}{}
+	c.reinitAcks()
+	c.t.Reset(c.waitTime)
 }
