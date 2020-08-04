@@ -67,7 +67,7 @@ type Replica struct {
 }
 
 const (
-	CHAN_BUFFER_SIZE = 200000
+	CHAN_BUFFER_SIZE = 2000000
 	TRUE             = uint8(1)
 	FALSE            = uint8(0)
 )

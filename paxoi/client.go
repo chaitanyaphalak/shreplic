@@ -21,7 +21,7 @@ type Client struct {
 	val       state.Value
 	ready     chan struct{}
 	ballot    int32
-	delivered map[int32]struct{}
+	delivered map[CommandId]struct{}
 }
 
 func NewClient(maddr, collocated string, mport, reqNum, writes, psize, conflict int,
@@ -45,7 +45,7 @@ func NewClient(maddr, collocated string, mport, reqNum, writes, psize, conflict 
 		val:       nil,
 		ready:     make(chan struct{}, 1),
 		ballot:    -1,
-		delivered: make(map[int32]struct{}),
+		delivered: make(map[CommandId]struct{}),
 	}
 
 	c.ReadTable = true
@@ -141,6 +141,10 @@ func (c *Client) handleFastAck(f *MFastAck, fromLeader bool) {
 		return
 	}
 
+	if _, exists := c.delivered[f.CmdId]; exists {
+		return
+	}
+
 	c.fastAndSlowAcks.Add(f.Replica, fromLeader, f)
 }
 
@@ -162,16 +166,16 @@ func (c *Client) handleFastAndSlowAcks(leaderMsg interface{}, msgs []interface{}
 		return
 	}
 
-	seqNum := leaderMsg.(*MFastAck).CmdId.SeqNum
-	if _, exists := c.delivered[seqNum]; exists {
+	cmdId := leaderMsg.(*MFastAck).CmdId
+	if _, exists := c.delivered[cmdId]; exists {
 		return
 	}
-	c.delivered[seqNum] = struct{}{}
+	c.delivered[cmdId] = struct{}{}
 
 	c.Println("Returning:", c.val.String())
+	c.reinitFastAndSlowAcks()
 	c.ResChan <- c.val
 	c.ready <- struct{}{}
-	c.reinitFastAndSlowAcks()
 }
 
 func (c *Client) handleReply(r *MReply) {
