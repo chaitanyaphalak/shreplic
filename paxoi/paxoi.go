@@ -3,7 +3,6 @@ package paxoi
 import (
 	"fmt"
 	"log"
-	"math/rand"
 	"sync"
 	"time"
 
@@ -40,10 +39,6 @@ type Replica struct {
 	descPool     sync.Pool
 	poolLevel    int
 	routineCount int
-
-	reqNum   int
-	slowPath int
-	conflict int
 }
 
 type commandDesc struct {
@@ -60,7 +55,6 @@ type commandDesc struct {
 	active   bool
 	slowPath bool
 	seq      bool
-	sent     bool
 
 	successors  []CommandId
 	successorsL sync.Mutex
@@ -106,10 +100,6 @@ func NewReplica(rid int, addrs []string, exec, dr, optExec bool,
 				return &commandDesc{}
 			},
 		},
-
-		reqNum:   0,
-		slowPath: 0,
-		conflict: 0,
 	}
 
 	useFastAckPool = pl > 1
@@ -256,7 +246,6 @@ func (r *Replica) handlePropose(msg *smr.GPropose,
 	if r.status != NORMAL || desc.phase != START || desc.propose != nil {
 		return
 	}
-	r.reqNum++
 
 	desc.propose = msg
 	desc.cmd = msg.Command
@@ -282,7 +271,6 @@ func (r *Replica) handlePropose(msg *smr.GPropose,
 	fastAck.Dep = desc.dep
 
 	fastAckSend := copyFastAck(fastAck)
-	desc.sent = true
 	if !r.optExec {
 		r.batcher.SendFastAck(fastAckSend)
 	} else {
@@ -291,15 +279,10 @@ func (r *Replica) handlePropose(msg *smr.GPropose,
 			// TODO: save old state
 			r.deliver(desc, cmdId)
 		} else {
-			if desc.sent = !randomTrue(r.conflict); desc.sent {
-				r.batcher.SendFastAckClient(fastAckSend, msg.ClientId)
-			}
+			r.batcher.SendFastAckClient(fastAckSend, msg.ClientId)
 		}
 	}
-
-	if desc.sent {
-		r.handleFastAck(fastAck, desc)
-	}
+	r.handleFastAck(fastAck, desc)
 }
 
 func (r *Replica) handleFastAck(msg *MFastAck, desc *commandDesc) {
@@ -343,27 +326,23 @@ func (r *Replica) fastAckFromLeader(msg *MFastAck, desc *commandDesc) {
 		}
 		equals, diffs := desc.dep.EqualsAndDiff(dep)
 
-		if !equals || !desc.sent {
-			if !equals {
-				r.slowPath++
-
-				oldDefered := desc.defered
-				desc.defered = func() {
-					for cmdId := range diffs {
-						if r.delivered.Has(cmdId.String()) {
-							continue
-						}
-						descPrime := r.getCmdDesc(cmdId, nil, nil)
-						if descPrime.phase == PRE_ACCEPT {
-							descPrime.phase = PAYLOAD_ONLY
-						}
+		if !equals {
+			oldDefered := desc.defered
+			desc.defered = func() {
+				for cmdId := range diffs {
+					if r.delivered.Has(cmdId.String()) {
+						continue
 					}
-					oldDefered()
+					descPrime := r.getCmdDesc(cmdId, nil, nil)
+					if descPrime.phase == PRE_ACCEPT {
+						descPrime.phase = PAYLOAD_ONLY
+					}
 				}
-
-				desc.dep = dep
-				desc.slowPath = true
+				oldDefered()
 			}
+
+			desc.dep = dep
+			desc.slowPath = true
 
 			lightSlowAck := &MLightSlowAck{
 				Replica: r.Id,
@@ -378,8 +357,6 @@ func (r *Replica) fastAckFromLeader(msg *MFastAck, desc *commandDesc) {
 			}
 			r.handleLightSlowAck(lightSlowAck, desc)
 		}
-
-		r.conflict = (r.slowPath * 100) / r.reqNum
 	})
 }
 
@@ -565,7 +542,6 @@ func (r *Replica) newDesc() *commandDesc {
 	desc.defered = func() {}
 	desc.propose = nil
 	desc.proposeDep = nil
-	desc.sent = false
 
 	desc.afterPropagate = desc.afterPropagate.ReinitCondF(func() bool {
 		return desc.propose != nil
@@ -683,14 +659,4 @@ func (r *Replica) getDepAndUpdateInfo(cmd state.Command, cmdId CommandId) Dep {
 	}
 
 	return dep
-}
-
-func randomTrue(prob int) bool {
-	if prob >= 100 {
-		return true
-	}
-	if prob > 0 {
-		return rand.Intn(100) <= prob
-	}
-	return false
 }
