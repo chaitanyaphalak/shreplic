@@ -33,6 +33,7 @@ type Replica struct {
 	cmdDescs  cmap.ConcurrentMap
 	unsynced  cmap.ConcurrentMap
 	executed  cmap.ConcurrentMap
+	committed cmap.ConcurrentMap
 	delivered cmap.ConcurrentMap
 
 	sender  smr.Sender
@@ -53,6 +54,8 @@ type commandDesc struct {
 	cmdId CommandId
 
 	cmd     state.Command
+	dep     int
+	sent    bool
 	phase   int
 	cmdSlot int
 	propose *smr.GPropose
@@ -93,6 +96,7 @@ func NewReplica(rid int, addrs []string, exec, dr bool,
 		cmdDescs:  cmap.New(),
 		unsynced:  cmap.New(),
 		executed:  cmap.New(),
+		committed: cmap.New(),
 		delivered: cmap.New(),
 		history:   make([]commandStaticDesc, HISTORY_SIZE),
 
@@ -158,11 +162,12 @@ func (r *Replica) run() {
 	for !r.Shutdown {
 		select {
 		case int := <-r.deliverChan:
-			r.getCmdDesc(int, "deliver")
+			r.getCmdDesc(int, "deliver", -1)
 
 		case propose := <-r.ProposeChan:
 			if r.isLeader {
-				desc := r.getCmdDesc(r.lastCmdSlot, propose)
+				dep := r.leaderUnsync(propose.Command, r.lastCmdSlot)
+				desc := r.getCmdDesc(r.lastCmdSlot, propose, dep)
 				if desc == nil {
 					log.Fatal("Got propose for the delivered command:",
 						propose.ClientId, propose.CommandId)
@@ -181,7 +186,7 @@ func (r *Replica) run() {
 				r.sender.SendToClient(propose.ClientId, recAck, r.cs.recordAckRPC)
 				slot, exists := r.slots[cmdId]
 				if exists {
-					r.getCmdDesc(slot, "deliver")
+					r.getCmdDesc(slot, "deliver", -1)
 				} else {
 					r.unsync(propose.Command)
 				}
@@ -190,26 +195,26 @@ func (r *Replica) run() {
 		case m := <-r.cs.acceptChan:
 			acc := m.(*MAccept)
 			r.slots[acc.CmdId] = acc.CmdSlot
-			r.getCmdDesc(acc.CmdSlot, acc)
+			r.getCmdDesc(acc.CmdSlot, acc, -1)
 
 		case m := <-r.cs.acceptAckChan:
 			ack := m.(*MAcceptAck)
-			r.getCmdDesc(ack.CmdSlot, ack)
+			r.getCmdDesc(ack.CmdSlot, ack, -1)
 
 		case m := <-r.cs.aacksChan:
 			aacks := m.(*MAAcks)
 			for _, a := range aacks.Accepts {
 				ta := a
-				r.getCmdDesc(a.CmdSlot, &ta)
+				r.getCmdDesc(a.CmdSlot, &ta, -1)
 			}
 			for _, b := range aacks.Acks {
 				tb := b
-				r.getCmdDesc(b.CmdSlot, &tb)
+				r.getCmdDesc(b.CmdSlot, &tb, -1)
 			}
 
 		case m := <-r.cs.commitChan:
 			commit := m.(*MCommit)
-			r.getCmdDesc(commit.CmdSlot, commit)
+			r.getCmdDesc(commit.CmdSlot, commit, -1)
 
 		case m := <-r.cs.syncChan:
 			sync := m.(*MSync)
@@ -227,7 +232,7 @@ func (r *Replica) run() {
 	}
 }
 
-func (r *Replica) handlePropose(msg *smr.GPropose, desc *commandDesc, slot int) {
+func (r *Replica) handlePropose(msg *smr.GPropose, desc *commandDesc, slot int, dep int) {
 
 	if r.status != NORMAL || desc.propose != nil {
 		return
@@ -240,6 +245,7 @@ func (r *Replica) handlePropose(msg *smr.GPropose, desc *commandDesc, slot int) 
 		SeqNum:   msg.CommandId,
 	}
 	desc.cmdSlot = slot
+	desc.dep = dep
 
 	acc := &MAccept{
 		Replica: r.Id,
@@ -305,9 +311,18 @@ func (r *Replica) handleCommit(msg *MCommit, desc *commandDesc) {
 	}
 
 	desc.phase = COMMIT
-	desc.afterPayload.Call(func() {
-		r.sync(desc.cmdId, desc.cmd)
-	})
+	if r.isLeader {
+		r.committed.Set(strconv.Itoa(desc.cmdSlot), struct{}{})
+	} else {
+		desc.afterPayload.Call(func() {
+			r.sync(desc.cmdId, desc.cmd)
+		})
+	}
+	defer func() {
+		go func(nextSlot int) {
+			r.deliverChan <- nextSlot
+		}(desc.cmdSlot + 1)
+	}()
 	r.deliver(desc, desc.cmdSlot)
 }
 
@@ -340,6 +355,22 @@ func (r *Replica) unsync(cmd state.Command) {
 			}
 			return 1
 		})
+}
+
+func (r *Replica) leaderUnsync(cmd state.Command, slot int) int {
+	depSlot := -1
+	key := strconv.FormatInt(int64(cmd.K), 10)
+	r.unsynced.Upsert(key, nil,
+		func(exists bool, mapV, _ interface{}) interface{} {
+			if exists {
+				if mapV.(int) > slot {
+					return mapV
+				}
+				depSlot = mapV.(int)
+			}
+			return slot
+		})
+	return depSlot
 }
 
 func (r *Replica) ok(cmd state.Command) uint8 {
@@ -383,18 +414,30 @@ func (r *Replica) deliver(desc *commandDesc, slot int) {
 			}(slot + 1)
 		}
 
-		if r.isLeader {
-			if r.ok(desc.cmd) == FALSE {
+		if r.isLeader && !desc.sent {
+			if desc.dep != -1 && !r.committed.Has(strconv.Itoa(desc.dep)) {
 				return
 			}
 
-			rep := &MReply{
-				Replica: r.Id,
-				Ballot:  r.ballot,
-				CmdId:   desc.cmdId,
-				Rep:     desc.val,
+			if desc.phase == COMMIT {
+				rep := &MSyncReply{
+					Replica: r.Id,
+					Ballot:  r.ballot,
+					CmdId:   desc.cmdId,
+					Rep:     desc.val,
+				}
+				r.sender.SendToClient(desc.propose.ClientId, rep, r.cs.syncReplyRPC)
+			} else {
+				rep := &MReply{
+					Replica: r.Id,
+					Ballot:  r.ballot,
+					CmdId:   desc.cmdId,
+					Rep:     desc.val,
+				}
+				r.sender.SendToClient(desc.propose.ClientId, rep, r.cs.replyRPC)
 			}
-			r.sender.SendToClient(desc.propose.ClientId, rep, r.cs.replyRPC)
+
+			desc.sent = true
 		}
 
 		if desc.phase == COMMIT {
@@ -404,7 +447,7 @@ func (r *Replica) deliver(desc *commandDesc, slot int) {
 				for {
 					switch hSlot := (<-desc.msgs).(type) {
 					case int:
-						r.handleMsg(hSlot, desc, slot)
+						r.handleMsg(hSlot, desc, slot, desc.dep)
 						return
 					}
 				}
@@ -413,7 +456,7 @@ func (r *Replica) deliver(desc *commandDesc, slot int) {
 	})
 }
 
-func (r *Replica) getCmdDesc(slot int, msg interface{}) *commandDesc {
+func (r *Replica) getCmdDesc(slot int, msg interface{}, dep int) *commandDesc {
 	slotStr := strconv.Itoa(slot)
 	if r.delivered.Has(slotStr) {
 		return nil
@@ -431,7 +474,7 @@ func (r *Replica) getCmdDesc(slot int, msg interface{}) *commandDesc {
 			desc = r.newDesc()
 			desc.cmdSlot = slot
 			if !desc.seq {
-				go r.handleDesc(desc, slot)
+				go r.handleDesc(desc, slot, dep)
 				r.routineCount++
 			}
 
@@ -440,7 +483,7 @@ func (r *Replica) getCmdDesc(slot int, msg interface{}) *commandDesc {
 
 	if msg != nil {
 		if desc.seq {
-			r.handleMsg(msg, desc, slot)
+			r.handleMsg(msg, desc, slot, dep)
 		} else {
 			desc.msgs <- msg
 		}
@@ -458,9 +501,11 @@ func (r *Replica) newDesc() *commandDesc {
 	desc.active = true
 	desc.phase = START
 	desc.seq = (r.routineCount >= MaxDescRoutines)
+	desc.sent = false
 	desc.propose = nil
 	desc.val = nil
 	desc.cmdId.SeqNum = -42
+	desc.dep = -1
 
 	desc.afterPayload = desc.afterPayload.ReinitCondF(func() bool {
 		return desc.cmdId.SeqNum != -42
@@ -486,20 +531,20 @@ func (r *Replica) freeDesc(desc *commandDesc) {
 	}
 }
 
-func (r *Replica) handleDesc(desc *commandDesc, slot int) {
+func (r *Replica) handleDesc(desc *commandDesc, slot int, dep int) {
 	for desc.active {
-		if r.handleMsg(<-desc.msgs, desc, slot) {
+		if r.handleMsg(<-desc.msgs, desc, slot, dep) {
 			r.routineCount--
 			return
 		}
 	}
 }
 
-func (r *Replica) handleMsg(m interface{}, desc *commandDesc, slot int) bool {
+func (r *Replica) handleMsg(m interface{}, desc *commandDesc, slot int, dep int) bool {
 	switch msg := m.(type) {
 
 	case *smr.GPropose:
-		r.handlePropose(msg, desc, slot)
+		r.handlePropose(msg, desc, slot, dep)
 
 	case *MAccept:
 		if msg.CmdSlot == slot {
