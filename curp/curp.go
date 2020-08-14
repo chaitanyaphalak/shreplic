@@ -54,12 +54,15 @@ type commandDesc struct {
 	cmdId CommandId
 
 	cmd     state.Command
-	dep     int
 	sent    bool
 	phase   int
 	cmdSlot int
 	propose *smr.GPropose
 	val     []byte
+
+	dep        int
+	successor  int
+	successorL sync.Mutex
 
 	acks         *smr.MsgSet
 	afterPayload *tools.OptCondF
@@ -246,6 +249,12 @@ func (r *Replica) handlePropose(msg *smr.GPropose, desc *commandDesc, slot int, 
 	}
 	desc.cmdSlot = slot
 	desc.dep = dep
+	if dep != -1 {
+		depDesc := r.getCmdDesc(dep, nil, -1)
+		depDesc.successorL.Lock()
+		depDesc.successor = slot
+		depDesc.successorL.Unlock()
+	}
 
 	acc := &MAccept{
 		Replica: r.Id,
@@ -319,9 +328,14 @@ func (r *Replica) handleCommit(msg *MCommit, desc *commandDesc) {
 		})
 	}
 	defer func() {
-		go func(nextSlot int) {
-			r.deliverChan <- nextSlot
-		}(desc.cmdSlot + 1)
+		desc.successorL.Lock()
+		succ := desc.successor
+		desc.successorL.Unlock()
+		if succ != -1 {
+			go func() {
+				r.deliverChan <- succ
+			}()
+		}
 	}()
 	r.deliver(desc, desc.cmdSlot)
 }
@@ -414,7 +428,7 @@ func (r *Replica) deliver(desc *commandDesc, slot int) {
 			}(slot + 1)
 		}
 
-		if r.isLeader && !desc.sent {
+		if r.isLeader {
 			if desc.dep != -1 && !r.committed.Has(strconv.Itoa(desc.dep)) {
 				return
 			}
@@ -506,6 +520,7 @@ func (r *Replica) newDesc() *commandDesc {
 	desc.val = nil
 	desc.cmdId.SeqNum = -42
 	desc.dep = -1
+	desc.successor = -1
 
 	desc.afterPayload = desc.afterPayload.ReinitCondF(func() bool {
 		return desc.cmdId.SeqNum != -42
