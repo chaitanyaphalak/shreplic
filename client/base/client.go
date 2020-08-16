@@ -428,7 +428,7 @@ func askMaster(master *rpc.Client, method string, l *log.Logger) (interface{}, e
 		rlArgs *defs.GetReplicaListArgs
 	)
 
-	for i := 0; i < 5; i++ {
+	for i := 0; i < 100; i++ {
 		if method == "GetReplicaList" {
 			rl = &defs.GetReplicaListReply{}
 			rlArgs = &defs.GetReplicaListArgs{}
