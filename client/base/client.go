@@ -214,14 +214,14 @@ func (c *Client) Disconnect() {
 	c.Println("Disconnected")
 }
 
-func (c *Client) Write(key state.Key, value []byte) {
+func (c *Client) Write(key int64, value []byte) {
 	c.Seqnum++
 	args := smr.Propose{
 		CommandId: c.Seqnum,
 		ClientId:  c.ClientId,
 		Command: state.Command{
 			Op: state.PUT,
-			K:  key,
+			K:  state.Key(key),
 			V:  value,
 		},
 		Timestamp: 0,
@@ -231,14 +231,14 @@ func (c *Client) Write(key state.Key, value []byte) {
 	c.execute(args)
 }
 
-func (c *Client) Read(key state.Key) []byte {
+func (c *Client) Read(key int64) []byte {
 	c.Seqnum++
 	args := smr.Propose{
 		CommandId: c.Seqnum,
 		ClientId:  c.ClientId,
 		Command: state.Command{
 			Op: state.GET,
-			K:  key,
+			K:  state.Key(key),
 			V:  state.NIL(),
 		},
 		Timestamp: 0,
@@ -248,14 +248,14 @@ func (c *Client) Read(key state.Key) []byte {
 	return c.execute(args)
 }
 
-func (c *Client) Scan(key state.Key, count int64) []byte {
+func (c *Client) Scan(key int64, count int64) []byte {
 	c.Seqnum++
 	args := smr.Propose{
 		CommandId: c.Seqnum,
 		ClientId:  c.ClientId,
 		Command: state.Command{
 			Op: state.SCAN,
-			K:  key,
+			K:  state.Key(key),
 			V:  make([]byte, 8)},
 		Timestamp: 0,
 	}

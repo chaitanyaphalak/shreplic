@@ -63,17 +63,17 @@ func (c *SimpleClient) Run() error {
 		before      time.Time
 		beforeTotal time.Time
 	)
-	clientKey := state.Key(uint64(uuid.New().Time()))
-	getKey := func() state.Key {
+	clientKey := int64(uuid.New().Time())
+	getKey := func() int64 {
 		if c.GetClientKey == nil {
 			return clientKey
 		}
-		return c.GetClientKey()
+		return int64(c.GetClientKey())
 	}
 	for i := 0; i < c.reqNum+1; i++ {
 		key := getKey()
 		if randomTrue(c.conflict) {
-			key = state.Key(42)
+			key = 42
 		}
 		go func(i int) {
 			if i == 1 {
