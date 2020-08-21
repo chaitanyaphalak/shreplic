@@ -248,7 +248,7 @@ func (c *Client) Read(key int64) []byte {
 	return c.execute(args)
 }
 
-func (c *Client) Scan(key int64, count int64) []byte {
+func (c *Client) Scan(key, count int64) []byte {
 	c.Seqnum++
 	args := smr.Propose{
 		CommandId: c.Seqnum,

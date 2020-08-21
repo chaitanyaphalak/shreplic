@@ -46,6 +46,73 @@ func NewSimpleClient(maddr, collocated string,
 	return sc
 }
 
+func (c *SimpleClient) Connect() error {
+	for try := 0; ; try++ {
+		err := c.Client.Connect()
+		if err == nil {
+			break
+		}
+		c.Disconnect()
+		if try > 50 {
+			return err
+		}
+	}
+	return nil
+}
+
+func (c *SimpleClient) Write(key int64, value []byte) {
+	// TODO: deal with errors
+	go c.Client.Write(key, value)
+	<-c.Waiting
+	if c.WaitResponse != nil {
+		c.WaitResponse()
+	} else {
+		if c.Fast {
+			c.waitReplies(c.ClosestId, c.Seqnum)
+		} else {
+			c.waitReplies(c.LastSubmitter, c.Seqnum)
+		}
+	}
+}
+
+func (c *SimpleClient) Read(key int64) []byte {
+	// TODO: deal with errors
+	var v []byte
+	go func() {
+		v = c.Client.Read(key)
+	}()
+	<-c.Waiting
+	if c.WaitResponse != nil {
+		c.WaitResponse()
+	} else {
+		if c.Fast {
+			c.waitReplies(c.ClosestId, c.Seqnum)
+		} else {
+			c.waitReplies(c.LastSubmitter, c.Seqnum)
+		}
+	}
+	return v
+}
+
+func (c *SimpleClient) Scan(key, count int64) []byte {
+	// TODO: deal with errors
+	var v []byte
+	go func() {
+		v = c.Client.Scan(key, count)
+	}()
+	<-c.Waiting
+	if c.WaitResponse != nil {
+		c.WaitResponse()
+	} else {
+		if c.Fast {
+			c.waitReplies(c.ClosestId, c.Seqnum)
+		} else {
+			c.waitReplies(c.LastSubmitter, c.Seqnum)
+		}
+	}
+	return v
+}
+
 func (c *SimpleClient) Run() error {
 	for try := 0; ; try++ {
 		err := c.Connect()
