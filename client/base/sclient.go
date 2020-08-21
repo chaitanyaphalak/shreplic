@@ -40,8 +40,8 @@ func NewSimpleClient(maddr, collocated string,
 		writes:   writes,
 		psize:    psize,
 		conflict: conflict,
-		writer:   logger.Writer(),
 	}
+	sc.writer = sc.Logger.Writer()
 	sc.Collocated(collocated)
 	return sc
 }

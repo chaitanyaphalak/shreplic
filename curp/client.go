@@ -36,7 +36,7 @@ func NewClient(maddr, collocated string, mport, reqNum, writes, psize, conflict 
 	fast, lread, leaderless, verbose bool, logger *log.Logger, args string) *Client {
 
 	// args must be of the form "-N <rep_num>"
-	f := flag.NewFlagSet("custom Paxoi arguments", flag.ExitOnError)
+	f := flag.NewFlagSet("custom CURP arguments", flag.ExitOnError)
 	repNum := f.Int("N", -1, "Number of replicas")
 	f.Parse(strings.Fields(args))
 	if *repNum == -1 {
