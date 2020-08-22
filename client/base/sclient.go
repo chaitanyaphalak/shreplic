@@ -150,9 +150,9 @@ func (c *SimpleClient) Run() error {
 			if randomTrue(c.writes) {
 				value := make([]byte, c.psize)
 				rand.Read(value)
-				c.Write(key, state.Value(value))
+				c.Client.Write(key, state.Value(value))
 			} else {
-				c.Read(key)
+				c.Client.Read(key)
 			}
 		}(i)
 		<-c.Waiting
