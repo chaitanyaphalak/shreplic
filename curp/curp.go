@@ -521,6 +521,7 @@ func (r *Replica) newDesc() *commandDesc {
 	desc.cmdId.SeqNum = -42
 	desc.dep = -1
 	desc.successor = -1
+	desc.successorL = sync.Mutex{}
 
 	desc.afterPayload = desc.afterPayload.ReinitCondF(func() bool {
 		return desc.cmdId.SeqNum != -42
