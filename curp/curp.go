@@ -187,11 +187,10 @@ func (r *Replica) run() {
 					Ok:      r.ok(propose.Command),
 				}
 				r.sender.SendToClient(propose.ClientId, recAck, r.cs.recordAckRPC)
+				r.unsync(propose.Command)
 				slot, exists := r.slots[cmdId]
 				if exists {
 					r.getCmdDesc(slot, "deliver", -1)
-				} else {
-					r.unsync(propose.Command)
 				}
 			}
 
@@ -291,7 +290,6 @@ func (r *Replica) handleAccept(msg *MAccept, desc *commandDesc) {
 	if r.isLeader {
 		r.handleAcceptAck(ack, desc)
 	} else {
-		r.sync(desc.cmdId, desc.cmd)
 		r.sender.SendTo(msg.Replica, ack, r.cs.acceptAckRPC)
 	}
 }
@@ -401,6 +399,10 @@ func (r *Replica) ok(cmd state.Command) uint8 {
 func (r *Replica) deliver(desc *commandDesc, slot int) {
 	desc.afterPayload.Call(func() {
 		slotStr := strconv.Itoa(slot)
+		if !r.isLeader {
+			r.sync(desc.cmdId, desc.cmd)
+		}
+
 		if r.delivered.Has(slotStr) || !r.Exec {
 			return
 		}
