@@ -251,9 +251,11 @@ func (r *Replica) handlePropose(msg *smr.GPropose, desc *commandDesc, slot int, 
 	desc.dep = dep
 	if dep != -1 {
 		depDesc := r.getCmdDesc(dep, nil, -1)
-		depDesc.successorL.Lock()
-		depDesc.successor = slot
-		depDesc.successorL.Unlock()
+		if depDesc != nil {
+			depDesc.successorL.Lock()
+			depDesc.successor = slot
+			depDesc.successorL.Unlock()
+		}
 	}
 
 	acc := &MAccept{
