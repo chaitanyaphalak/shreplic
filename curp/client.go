@@ -3,6 +3,7 @@ package curp
 import (
 	"flag"
 	"log"
+	"math/rand"
 	"sort"
 	"strings"
 	"time"
@@ -64,8 +65,10 @@ func NewClient(maddr, collocated string, mport, reqNum, writes, psize, conflict 
 	}
 
 	c.ReadTable = true
+	rand.Seed(time.Now().UnixNano())
 	c.GetClientKey = func() state.Key {
-		return state.Key(uint64(uuid.New().Time()))
+		h := rand.Uint64()
+		return state.Key(uint64(uuid.New().Time()) + h)
 	}
 
 	first := true

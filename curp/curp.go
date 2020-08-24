@@ -341,6 +341,9 @@ func (r *Replica) handleCommit(msg *MCommit, desc *commandDesc) {
 }
 
 func (r *Replica) sync(cmdId CommandId, cmd state.Command) {
+	if r.isLeader {
+		return
+	}
 	key := strconv.FormatInt(int64(cmd.K), 10)
 	r.unsynced.Upsert(key, nil,
 		func(exists bool, mapV, _ interface{}) interface{} {
