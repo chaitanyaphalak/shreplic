@@ -3,12 +3,11 @@ package curp
 import (
 	"flag"
 	"log"
-	"math/rand"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/vonaka/shreplic/client/base"
 	"github.com/vonaka/shreplic/server/smr"
 	"github.com/vonaka/shreplic/state"
@@ -23,6 +22,7 @@ type Client struct {
 	t         *Timer
 	Q         smr.ThreeQuarters
 	cs        CommunicationSupply
+	num       int
 	val       state.Value
 	ready     chan struct{}
 	leader    int32
@@ -33,17 +33,28 @@ type Client struct {
 	lastCmdId CommandId
 }
 
+var (
+	m         sync.Mutex
+	clientNum int
+)
+
 func NewClient(maddr, collocated string, mport, reqNum, writes, psize, conflict int,
 	fast, lread, leaderless, verbose bool, logger *log.Logger, args string) *Client {
 
 	// args must be of the form "-N <rep_num>"
 	f := flag.NewFlagSet("custom CURP arguments", flag.ExitOnError)
 	repNum := f.Int("N", -1, "Number of replicas")
+	pclients := f.Int("pclients", 0, "Number of clients already running on other machines")
 	f.Parse(strings.Fields(args))
 	if *repNum == -1 {
 		f.Usage()
 		return nil
 	}
+
+	m.Lock()
+	num := clientNum
+	clientNum++
+	m.Unlock()
 
 	c := &Client{
 		SimpleClient: base.NewSimpleClient(maddr, collocated, mport, reqNum, writes,
@@ -52,6 +63,7 @@ func NewClient(maddr, collocated string, mport, reqNum, writes, psize, conflict 
 		N:         *repNum,
 		t:         NewTimer(),
 		Q:         smr.NewThreeQuartersOf(*repNum),
+		num:       num,
 		val:       nil,
 		ready:     make(chan struct{}, 1),
 		leader:    -1,
@@ -65,10 +77,11 @@ func NewClient(maddr, collocated string, mport, reqNum, writes, psize, conflict 
 	}
 
 	c.ReadTable = true
-	rand.Seed(time.Now().UnixNano())
+	i := 0
 	c.GetClientKey = func() state.Key {
-		h := rand.Uint64()
-		return state.Key(uint64(uuid.New().Time()) + h)
+		k := 100 + i + (reqNum * (c.num + *pclients))
+		i++
+		return state.Key(k)
 	}
 
 	first := true

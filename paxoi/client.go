@@ -30,6 +30,7 @@ func NewClient(maddr, collocated string, mport, reqNum, writes, psize, conflict 
 	// args must be of the form "-N <rep_num>"
 	f := flag.NewFlagSet("custom Paxoi arguments", flag.ExitOnError)
 	repNum := f.Int("N", -1, "Number of replicas")
+	f.Int("pclients", 0, "Number of clients already running on other machines")
 	f.Parse(strings.Fields(args))
 	if *repNum == -1 {
 		f.Usage()
