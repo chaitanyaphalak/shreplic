@@ -31,6 +31,9 @@ type Client struct {
 	delivered map[int32]struct{}
 
 	lastCmdId CommandId
+
+	slowPaths int
+	alreadySlow map[CommandId]struct{}
 }
 
 var (
@@ -69,6 +72,9 @@ func NewClient(maddr, collocated string, mport, reqNum, writes, psize, conflict 
 		leader:    -1,
 		ballot:    -1,
 		delivered: make(map[int32]struct{}),
+
+		slowPaths: 0,
+		alreadySlow: make(map[CommandId]struct{}),
 	}
 
 	c.lastCmdId = CommandId{
@@ -110,6 +116,11 @@ func NewClient(maddr, collocated string, mport, reqNum, writes, psize, conflict 
 
 func (c *Client) reinitAcks() {
 	accept := func(msg, _ interface{}) bool {
+		ack := msg.(*MRecordAck)
+		if _, exists := c.alreadySlow[ack.CmdId]; !exists && ack.Ok == FALSE {
+			c.slowPaths++
+			c.alreadySlow[ack.CmdId] = struct{}{}
+		}
 		return msg.(*MRecordAck).Ok == TRUE
 	}
 
@@ -202,6 +213,7 @@ func (c *Client) handleSyncReply(rep *MSyncReply) {
 	c.val = state.Value(rep.Rep)
 	c.delivered[rep.CmdId.SeqNum] = struct{}{}
 	c.lastCmdId.SeqNum++
+	c.Println("Slow Paths:", c.slowPaths)
 	c.Println("Returning:", c.val.String())
 	c.ResChan <- c.val
 	c.ready <- struct{}{}
@@ -216,6 +228,7 @@ func (c *Client) handleAcks(leaderMsg interface{}, msgs []interface{}) {
 
 	c.delivered[leaderMsg.(*MRecordAck).CmdId.SeqNum] = struct{}{}
 	c.lastCmdId.SeqNum++
+	c.Println("Slow Paths:", c.slowPaths)
 	c.Println("Returning:", c.val.String())
 	c.ResChan <- c.val
 	c.ready <- struct{}{}

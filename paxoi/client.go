@@ -22,6 +22,9 @@ type Client struct {
 	ready     chan struct{}
 	ballot    int32
 	delivered map[CommandId]struct{}
+
+	slowPaths int
+	alreadySlow map[CommandId]struct{}
 }
 
 func NewClient(maddr, collocated string, mport, reqNum, writes, psize, conflict int,
@@ -47,6 +50,9 @@ func NewClient(maddr, collocated string, mport, reqNum, writes, psize, conflict 
 		ready:     make(chan struct{}, 1),
 		ballot:    -1,
 		delivered: make(map[CommandId]struct{}),
+
+		slowPaths: 0,
+		alreadySlow: make(map[CommandId]struct{}),
 	}
 
 	c.ReadTable = true
@@ -94,10 +100,18 @@ func (c *Client) handleMsgs() {
 
 		case m := <-c.cs.slowAckChan:
 			slowAck := m.(*MSlowAck)
+			if _, exists := c.alreadySlow[slowAck.CmdId]; !exists {
+				c.slowPaths++
+				c.alreadySlow[slowAck.CmdId] = struct{}{}
+			}
 			c.handleSlowAck(slowAck)
 
 		case m := <-c.cs.lightSlowAckChan:
 			lightSlowAck := m.(*MLightSlowAck)
+			if _, exists := c.alreadySlow[lightSlowAck.CmdId]; !exists {
+				c.slowPaths++
+				c.alreadySlow[lightSlowAck.CmdId] = struct{}{}
+			}
 			c.handleLightSlowAck(lightSlowAck)
 
 		case m := <-c.cs.acksChan:
@@ -107,6 +121,10 @@ func (c *Client) handleMsgs() {
 			}
 			for _, s := range acks.LightSlowAcks {
 				ls := s
+				if _, exists := c.alreadySlow[ls.CmdId]; !exists {
+					c.slowPaths++
+					c.alreadySlow[ls.CmdId] = struct{}{}
+				}
 				c.handleLightSlowAck(&ls)
 			}
 
@@ -120,6 +138,10 @@ func (c *Client) handleMsgs() {
 				if !IsNilDepOfCmdId(ack.CmdId, ack.Dep) {
 					fastAck.Dep = ack.Dep
 				} else {
+					if _, exists := c.alreadySlow[fastAck.CmdId]; !exists {
+						c.slowPaths++
+						c.alreadySlow[fastAck.CmdId] = struct{}{}
+					}
 					fastAck.Dep = nil
 				}
 				c.handleFastAck(fastAck, false)
@@ -173,6 +195,7 @@ func (c *Client) handleFastAndSlowAcks(leaderMsg interface{}, msgs []interface{}
 	}
 	c.delivered[cmdId] = struct{}{}
 
+	c.Println("Slow Paths:", c.slowPaths)
 	c.Println("Returning:", c.val.String())
 	c.reinitFastAndSlowAcks()
 	c.ResChan <- c.val
