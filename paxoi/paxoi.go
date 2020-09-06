@@ -55,6 +55,7 @@ type commandDesc struct {
 	active   bool
 	slowPath bool
 	seq      bool
+	stopChan chan *sync.WaitGroup
 
 	successors  []CommandId
 	successorsL sync.Mutex
@@ -406,10 +407,6 @@ func (r *Replica) handleLightSlowAck(msg *MLightSlowAck, desc *commandDesc) {
 	r.commonCaseFastAck(fastAck, desc)
 }
 
-func (r *Replica) handleNewLeader(msg *MNewLeader) {
-
-}
-
 func (r *Replica) handleNewLeaderAck(msg *MNewLeaderAck) {
 
 }
@@ -542,6 +539,9 @@ func (r *Replica) newDesc() *commandDesc {
 	desc.defered = func() {}
 	desc.propose = nil
 	desc.proposeDep = nil
+	if desc.stopChan == nil {
+		desc.stopChan = make(chan *sync.WaitGroup, 8)
+	}
 
 	desc.afterPropagate = desc.afterPropagate.ReinitCondF(func() bool {
 		return desc.propose != nil
@@ -586,9 +586,19 @@ func (r *Replica) freeDesc(desc *commandDesc) {
 
 func (r *Replica) handleDesc(desc *commandDesc, cmdId CommandId) {
 	for desc.active {
-		if r.handleMsg(<-desc.msgs, desc, cmdId) {
-			r.routineCount--
+		select {
+		case wg := <-desc.stopChan:
+			desc.active = false
+			wg.Done()
 			return
+		case msg := <-desc.msgs:
+			if r.handleMsg(msg, desc, cmdId) {
+				r.routineCount--
+				for len(desc.stopChan) != 0 {
+					(<-desc.stopChan).Done()
+				}
+				return
+			}
 		}
 	}
 }
