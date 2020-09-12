@@ -55,6 +55,48 @@ func (r *Replica) handleNewLeaderAck(msg *MNewLeaderAck) {
 }
 
 func (r *Replica) handleNewLeaderAcks(_ interface{}, msgs []interface{}) {
+	maxCbal := int32(-1)
+	var U map[*MNewLeaderAck]struct{}
+
+	for _, msg := range msgs {
+		newLeaderAck := msg.(*MNewLeaderAck)
+		if maxCbal < newLeaderAck.Cballot {
+			U = make(map[*MNewLeaderAck]struct{})
+			maxCbal = newLeaderAck.Cballot
+		}
+		if maxCbal == newLeaderAck.Cballot {
+			U[newLeaderAck] = struct{}{}
+		}
+	}
+
+	mAQ := r.qs.AQ(maxCbal)
+	shareState := &MShareState{
+		Replica: r.Id,
+		Ballot:  r.ballot,
+	}
+
+	for newLeaderAck := range U {
+		if mAQ.Contains(newLeaderAck.Replica) {
+			if newLeaderAck.Replica != r.Id {
+				r.sender.SendTo(newLeaderAck.Replica, shareState, r.cs.shareStateRPC)
+			} else {
+				r.handleShareState(shareState)
+			}
+			return
+		}
+	}
+
+	if maxCbal == r.cballot {
+		r.handleShareState(shareState)
+		return
+	}
+
+	for newLeaderAck := range U {
+		r.sender.SendTo(newLeaderAck.Replica, shareState, r.cs.shareStateRPC)
+	}
+}
+
+func (r *Replica) handleShareState(msg *MShareState) {
 
 }
 
