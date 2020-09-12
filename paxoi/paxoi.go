@@ -403,10 +403,6 @@ func (r *Replica) handleLightSlowAck(msg *MLightSlowAck, desc *commandDesc) {
 	r.commonCaseFastAck(fastAck, desc)
 }
 
-func (r *Replica) handleNewLeaderAck(msg *MNewLeaderAck) {
-
-}
-
 func (r *Replica) handleSync(msg *MSync) {
 
 }
@@ -577,6 +573,12 @@ func (r *Replica) freeDesc(desc *commandDesc) {
 }
 
 func (r *Replica) handleDesc(desc *commandDesc, cmdId CommandId) {
+	defer func() {
+		for len(desc.stopChan) != 0 {
+			(<-desc.stopChan).Done()
+		}
+	}()
+
 	for desc.active {
 		select {
 		case wg := <-desc.stopChan:
@@ -586,9 +588,6 @@ func (r *Replica) handleDesc(desc *commandDesc, cmdId CommandId) {
 		case msg := <-desc.msgs:
 			if r.handleMsg(msg, desc, cmdId) {
 				r.routineCount--
-				for len(desc.stopChan) != 0 {
-					(<-desc.stopChan).Done()
-				}
 				return
 			}
 		}
