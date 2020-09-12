@@ -2,21 +2,31 @@ package paxoi
 
 import (
 	"sync"
+
+	"github.com/vonaka/shreplic/server/smr"
 )
 
-func (r *Replica) handleNewLeader(nl *MNewLeader) {
-	if r.ballot >= nl.Ballot {
+func (r *Replica) handleNewLeader(msg *MNewLeader) {
+	if r.ballot >= msg.Ballot {
 		return
 	}
 
 	r.status = RECOVERING
-	r.ballot = nl.Ballot
+	r.ballot = msg.Ballot
+
 	r.stopDescs()
-	r.sender.SendToAll(&MNewLeaderAck{
+	r.reinitNewLeaderAcks() //TODO: move this to ``recover()'' function
+
+	newLeaderAck := &MNewLeaderAck{
 		Replica: r.Id,
 		Ballot:  r.ballot,
 		Cballot: r.cballot,
-	}, r.cs.newLeaderAckRPC)
+	}
+	if msg.Replica != r.Id {
+		r.sender.SendTo(msg.Replica, newLeaderAck, r.cs.newLeaderAckRPC)
+	} else {
+		r.handleNewLeaderAck(newLeaderAck)
+	}
 
 	// stop processing normal channels:
 	for r.status == RECOVERING {
@@ -36,7 +46,15 @@ func (r *Replica) handleNewLeader(nl *MNewLeader) {
 	}
 }
 
-func (r *Replica) handleNewLeaderAck(nl *MNewLeaderAck) {
+func (r *Replica) handleNewLeaderAck(msg *MNewLeaderAck) {
+	if r.status != RECOVERING || r.ballot != msg.Ballot {
+		return
+	}
+
+	r.newLeaderAcks.Add(msg.Replica, false, msg)
+}
+
+func (r *Replica) handleNewLeaderAcks(_ interface{}, msgs []interface{}) {
 
 }
 
@@ -50,4 +68,13 @@ func (r *Replica) stopDescs() {
 		}
 	})
 	wg.Wait()
+}
+
+func (r *Replica) reinitNewLeaderAcks() {
+	accept := func(_, _ interface{}) bool {
+		return true
+	}
+	free := func(_ interface{}) { }
+	Q := smr.NewMajorityOf(r.N)
+	r.newLeaderAcks = r.newLeaderAcks.ReinitMsgSet(Q, accept, free, r.handleNewLeaderAcks)
 }

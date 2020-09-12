@@ -39,6 +39,8 @@ type Replica struct {
 	descPool     sync.Pool
 	poolLevel    int
 	routineCount int
+
+	newLeaderAcks *smr.MsgSet
 }
 
 type commandDesc struct {
