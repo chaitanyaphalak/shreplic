@@ -144,7 +144,6 @@ type CommunicationSupply struct {
 	newLeaderChan    chan fastrpc.Serializable
 	newLeaderAckChan chan fastrpc.Serializable
 	syncChan         chan fastrpc.Serializable
-	syncAckChan      chan fastrpc.Serializable
 	flushChan        chan fastrpc.Serializable
 	collectChan      chan fastrpc.Serializable
 
@@ -157,7 +156,6 @@ type CommunicationSupply struct {
 	newLeaderRPC    uint8
 	newLeaderAckRPC uint8
 	syncRPC         uint8
-	syncAckRPC      uint8
 	flushRPC        uint8
 	collectRPC      uint8
 }
@@ -174,7 +172,6 @@ func initCs(cs *CommunicationSupply, t *fastrpc.Table) {
 	cs.newLeaderChan = make(chan fastrpc.Serializable, smr.CHAN_BUFFER_SIZE)
 	cs.newLeaderAckChan = make(chan fastrpc.Serializable, smr.CHAN_BUFFER_SIZE)
 	cs.syncChan = make(chan fastrpc.Serializable, smr.CHAN_BUFFER_SIZE)
-	cs.syncAckChan = make(chan fastrpc.Serializable, smr.CHAN_BUFFER_SIZE)
 	cs.flushChan = make(chan fastrpc.Serializable, smr.CHAN_BUFFER_SIZE)
 	cs.collectChan = make(chan fastrpc.Serializable, smr.CHAN_BUFFER_SIZE)
 
@@ -187,7 +184,6 @@ func initCs(cs *CommunicationSupply, t *fastrpc.Table) {
 	cs.newLeaderRPC = t.Register(new(MNewLeader), cs.newLeaderChan)
 	cs.newLeaderAckRPC = t.Register(new(MNewLeaderAck), cs.newLeaderAckChan)
 	cs.syncRPC = t.Register(new(MSync), cs.syncChan)
-	cs.syncAckRPC = t.Register(new(MSyncAck), cs.syncAckChan)
 	cs.flushRPC = t.Register(new(MFlush), cs.flushChan)
 	cs.collectRPC = t.Register(new(MCollect), cs.collectChan)
 }

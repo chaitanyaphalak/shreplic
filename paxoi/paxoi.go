@@ -226,10 +226,6 @@ func (r *Replica) run() {
 			sync := m.(*MSync)
 			r.handleSync(sync)
 
-		case m := <-r.cs.syncAckChan:
-			syncAck := m.(*MSyncAck)
-			r.handleSyncAck(syncAck)
-
 		case m := <-r.cs.flushChan:
 			flush := m.(*MFlush)
 			r.handleFlush(flush)
@@ -412,10 +408,6 @@ func (r *Replica) handleNewLeaderAck(msg *MNewLeaderAck) {
 }
 
 func (r *Replica) handleSync(msg *MSync) {
-
-}
-
-func (r *Replica) handleSyncAck(msg *MSyncAck) {
 
 }
 
