@@ -4,6 +4,7 @@ import (
 	"sync"
 
 	"github.com/vonaka/shreplic/server/smr"
+	"github.com/vonaka/shreplic/state"
 )
 
 func (r *Replica) handleNewLeader(msg *MNewLeader) {
@@ -97,6 +98,48 @@ func (r *Replica) handleNewLeaderAcks(_ interface{}, msgs []interface{}) {
 }
 
 func (r *Replica) handleShareState(msg *MShareState) {
+	if r.status != RECOVERING || r.ballot != msg.Ballot {
+		return
+	}
+
+	// TODO: optimize
+
+	phases := make(map[CommandId]int)
+	cmds := make(map[CommandId]state.Command)
+	deps := make(map[CommandId]Dep)
+
+	for _, sDesc := range r.history {
+		phases[sDesc.cmdId] = sDesc.phase
+		cmds[sDesc.cmdId] = sDesc.cmd
+		deps[sDesc.cmdId] = sDesc.dep
+		sDesc.defered()
+	}
+	r.cmdDescs.IterCb(func(_ string, v interface{}) {
+		desc := v.(*commandDesc)
+		if desc.propose != nil {
+			cmdId := CommandId{
+				ClientId: desc.propose.ClientId,
+				SeqNum:   desc.propose.CommandId,
+			}
+			phases[cmdId] = desc.phase
+			cmds[cmdId] = desc.cmd
+			deps[cmdId] = desc.dep
+		}
+		desc.defered()
+	})
+
+	sync := &MSync{
+		Replica: r.Id,
+		Ballot:  r.ballot,
+		Phases:  phases,
+		Cmds:    cmds,
+		Deps:    deps,
+	}
+	r.sender.SendToAll(sync, r.cs.syncRPC)
+	r.handleSync(sync)
+}
+
+func (r *Replica) handleSync(msg *MSync) {
 
 }
 
@@ -110,6 +153,8 @@ func (r *Replica) stopDescs() {
 		}
 	})
 	wg.Wait()
+
+	// TODO: add to history even if stopped this way
 }
 
 func (r *Replica) reinitNewLeaderAcks() {

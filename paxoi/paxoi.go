@@ -405,10 +405,6 @@ func (r *Replica) handleLightSlowAck(msg *MLightSlowAck, desc *commandDesc) {
 	r.commonCaseFastAck(fastAck, desc)
 }
 
-func (r *Replica) handleSync(msg *MSync) {
-
-}
-
 func (r *Replica) handleFlush(msg *MFlush) {
 
 }
