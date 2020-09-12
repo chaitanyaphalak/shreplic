@@ -40,6 +40,10 @@ func (r *Replica) handleNewLeader(msg *MNewLeader) {
 			newLeaderAck := m.(*MNewLeaderAck)
 			r.handleNewLeaderAck(newLeaderAck)
 
+		case m := <-r.cs.shareStateChan:
+			shareState := m.(*MShareState)
+			r.handleShareState(shareState)
+
 		case m := <-r.cs.syncChan:
 			sync := m.(*MSync)
 			r.handleSync(sync)
@@ -109,10 +113,16 @@ func (r *Replica) handleShareState(msg *MShareState) {
 	deps := make(map[CommandId]Dep)
 
 	for _, sDesc := range r.history {
+		sDesc.defered()
+	}
+	r.cmdDescs.IterCb(func(_ string, v interface{}) {
+		v.(*commandDesc).defered()
+	})
+
+	for _, sDesc := range r.history {
 		phases[sDesc.cmdId] = sDesc.phase
 		cmds[sDesc.cmdId] = sDesc.cmd
 		deps[sDesc.cmdId] = sDesc.dep
-		sDesc.defered()
 	}
 	r.cmdDescs.IterCb(func(_ string, v interface{}) {
 		desc := v.(*commandDesc)
@@ -125,7 +135,6 @@ func (r *Replica) handleShareState(msg *MShareState) {
 			cmds[cmdId] = desc.cmd
 			deps[cmdId] = desc.dep
 		}
-		desc.defered()
 	})
 
 	sync := &MSync{
@@ -140,7 +149,17 @@ func (r *Replica) handleShareState(msg *MShareState) {
 }
 
 func (r *Replica) handleSync(msg *MSync) {
+	if r.ballot > msg.Ballot || (r.ballot == msg.Ballot && r.status == NORMAL) {
+		return
+	}
 
+	r.status = NORMAL
+	r.ballot = msg.Ballot
+	r.cballot = msg.Ballot
+
+	//for cmdId, phase := range msg.Phases {
+	// TODO
+	//}
 }
 
 func (r *Replica) stopDescs() {
@@ -154,7 +173,7 @@ func (r *Replica) stopDescs() {
 	})
 	wg.Wait()
 
-	// TODO: add to history even if stopped this way
+	// TODO: maybe add to history even if stopped this way ?
 }
 
 func (r *Replica) reinitNewLeaderAcks() {

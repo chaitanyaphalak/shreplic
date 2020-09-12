@@ -220,10 +220,6 @@ func (r *Replica) run() {
 			newLeader := m.(*MNewLeader)
 			r.handleNewLeader(newLeader)
 
-		case m := <-r.cs.newLeaderAckChan:
-			newLeaderAck := m.(*MNewLeaderAck)
-			r.handleNewLeaderAck(newLeaderAck)
-
 		case m := <-r.cs.syncChan:
 			sync := m.(*MSync)
 			r.handleSync(sync)
