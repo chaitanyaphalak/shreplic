@@ -44,7 +44,7 @@ func (r *Replica) stopDescs() {
 	var wg sync.WaitGroup
 	r.cmdDescs.IterCb(func(_ string, v interface{}) {
 		desc := v.(*commandDesc)
-		if !desc.seq {
+		if desc.active && !desc.seq {
 			wg.Add(1)
 			desc.stopChan <- &wg
 		}
