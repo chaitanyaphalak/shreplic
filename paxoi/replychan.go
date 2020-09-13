@@ -14,42 +14,54 @@ type replyArgs struct {
 }
 
 type replyChan struct {
-	args chan *replyArgs
-	rep  *smr.ProposeReplyTS
+	rep      *smr.ProposeReplyTS
+	args     chan *replyArgs
+	readArgs chan *replyArgs
 }
 
 func NewReplyChan(r *Replica) *replyChan {
 	rc := &replyChan{
-		args: make(chan *replyArgs, smr.CHAN_BUFFER_SIZE),
 		rep: &smr.ProposeReplyTS{
 			OK: smr.TRUE,
 		},
+		args:     make(chan *replyArgs, smr.CHAN_BUFFER_SIZE),
+		readArgs: make(chan *replyArgs, smr.CHAN_BUFFER_SIZE),
 	}
 
 	go func() {
 		slot := 0
 		for !r.Shutdown {
-			args := <-rc.args
+			select {
+			case args := <-rc.args:
+				if args.propose.Collocated && !r.optExec {
+					rc.rep.CommandId = args.propose.CommandId
+					rc.rep.Value = args.val
+					rc.rep.Timestamp = args.propose.Timestamp
 
-			if args.propose.Collocated && !r.optExec {
-				rc.rep.CommandId = args.propose.CommandId
-				rc.rep.Value = args.val
-				rc.rep.Timestamp = args.propose.Timestamp
+					r.ReplyProposeTS(rc.rep, args.propose.Reply, args.propose.Mutex)
+				} else if r.optExec && r.Id == r.leader() {
+					reply := &MReply{
+						Replica: r.Id,
+						Ballot:  r.ballot,
+						CmdId:   args.cmdId,
+						Dep:     args.dep,
+						Rep:     args.val,
+					}
+					r.sender.SendToClient(args.propose.ClientId, reply, r.cs.replyRPC)
+				}
 
-				r.ReplyProposeTS(rc.rep, args.propose.Reply, args.propose.Mutex)
-			} else if r.optExec && r.Id == r.leader() {
-				reply := &MReply{
+				args.finish <- slot
+				slot = (slot + 1) % HISTORY_SIZE
+
+			case args := <-rc.readArgs:
+				reply := &MReadReply{
 					Replica: r.Id,
 					Ballot:  r.ballot,
 					CmdId:   args.cmdId,
-					Dep:     args.dep,
 					Rep:     args.val,
 				}
-				r.sender.SendToClient(args.propose.ClientId, reply, r.cs.replyRPC)
+				r.sender.SendToClient(args.propose.ClientId, reply, r.cs.readReplyRPC)
 			}
-
-			args.finish <- slot
-			slot = (slot + 1) % HISTORY_SIZE
 		}
 	}()
 
@@ -65,5 +77,13 @@ func (r *replyChan) reply(desc *commandDesc, cmdId CommandId, val state.Value) {
 		cmdId:   cmdId,
 		finish:  desc.msgs,
 		propose: desc.propose,
+	}
+}
+
+func (r *replyChan) readReply(p *smr.GPropose, cmdId CommandId, val state.Value) {
+	r.readArgs <- &replyArgs{
+		val:     val,
+		cmdId:   cmdId,
+		propose: p,
 	}
 }

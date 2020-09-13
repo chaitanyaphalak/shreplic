@@ -36,7 +36,7 @@ var (
 	thrifty     = flag.Bool("thrifty", false, "Use only as many messages as strictly required")
 	exec        = flag.Bool("exec", true, "Execute commands")
 	optExec     = flag.Bool("optexec", false, "Execute commands optimistically")
-	lread       = flag.Bool("lread", false, "Execute read command locally")
+	lread       = flag.Bool("lread", false, "Fast reads")
 	dreply      = flag.Bool("dreply", true, "Reply to client only after command has been executed")
 	beacon      = flag.Bool("beacon", false, "Send beacons to other replicas to compare their relative speeds")
 	maxfailures = flag.Int("maxfailures", -1, "Maximum number of failures")
@@ -97,7 +97,7 @@ func main() {
 	} else if *doPaxoi {
 		log.Println("Starting Paxoi replica...")
 		paxoi.MaxDescRoutines = *descNum
-		rep := paxoi.NewReplica(replicaId, nodeList, *exec,
+		rep := paxoi.NewReplica(replicaId, nodeList, *exec, *lread,
 			*dreply, *optExec, *poolLevel, *maxfailures, *qfile, ps)
 		rpc.Register(rep)
 	} else if *doN2paxos {

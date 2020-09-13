@@ -141,6 +141,7 @@ type CommunicationSupply struct {
 	acksChan         chan fastrpc.Serializable
 	optAcksChan      chan fastrpc.Serializable
 	replyChan        chan fastrpc.Serializable
+	readReplyChan    chan fastrpc.Serializable
 	newLeaderChan    chan fastrpc.Serializable
 	newLeaderAckChan chan fastrpc.Serializable
 	shareStateChan   chan fastrpc.Serializable
@@ -154,6 +155,7 @@ type CommunicationSupply struct {
 	acksRPC         uint8
 	optAcksRPC      uint8
 	replyRPC        uint8
+	readReplyRPC    uint8
 	newLeaderRPC    uint8
 	newLeaderAckRPC uint8
 	shareStateRPC   uint8
@@ -171,6 +173,7 @@ func initCs(cs *CommunicationSupply, t *fastrpc.Table) {
 	cs.acksChan = make(chan fastrpc.Serializable, smr.CHAN_BUFFER_SIZE)
 	cs.optAcksChan = make(chan fastrpc.Serializable, smr.CHAN_BUFFER_SIZE)
 	cs.replyChan = make(chan fastrpc.Serializable, smr.CHAN_BUFFER_SIZE)
+	cs.readReplyChan = make(chan fastrpc.Serializable, smr.CHAN_BUFFER_SIZE)
 	cs.newLeaderChan = make(chan fastrpc.Serializable, smr.CHAN_BUFFER_SIZE)
 	cs.newLeaderAckChan = make(chan fastrpc.Serializable, smr.CHAN_BUFFER_SIZE)
 	cs.shareStateChan = make(chan fastrpc.Serializable, smr.CHAN_BUFFER_SIZE)
@@ -184,6 +187,7 @@ func initCs(cs *CommunicationSupply, t *fastrpc.Table) {
 	cs.acksRPC = t.Register(new(MAcks), cs.acksChan)
 	cs.optAcksRPC = t.Register(new(MOptAcks), cs.optAcksChan)
 	cs.replyRPC = t.Register(new(MReply), cs.replyChan)
+	cs.readReplyRPC = t.Register(new(MReadReply), cs.readReplyChan)
 	cs.newLeaderRPC = t.Register(new(MNewLeader), cs.newLeaderChan)
 	cs.newLeaderAckRPC = t.Register(new(MNewLeaderAck), cs.newLeaderAckChan)
 	cs.shareStateRPC = t.Register(new(MShareState), cs.shareStateChan)

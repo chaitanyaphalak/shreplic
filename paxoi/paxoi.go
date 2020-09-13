@@ -26,14 +26,17 @@ type Replica struct {
 	sender  smr.Sender
 	batcher *Batcher
 	repchan *replyChan
-	history []commandStaticDesc
+
 	keys    map[state.Key]keyInfo
+	reads   map[CommandId]*readDesc
+	history []commandStaticDesc
 
 	AQ smr.Quorum
 	qs smr.QuorumSet
 	cs CommunicationSupply
 
 	optExec     bool
+	fastRead    bool
 	deliverChan chan CommandId
 
 	descPool     sync.Pool
@@ -62,8 +65,7 @@ type commandDesc struct {
 	successors  []CommandId
 	successorsL sync.Mutex
 
-	// will be executed before sending
-	// NewLeaderAck message
+	// execute before sending a MSync message
 	defered func()
 }
 
@@ -76,7 +78,12 @@ type commandStaticDesc struct {
 	defered  func()
 }
 
-func NewReplica(rid int, addrs []string, exec, dr, optExec bool,
+type readDesc struct {
+	dep     Dep
+	propose *smr.GPropose
+}
+
+func NewReplica(rid int, addrs []string, exec, fastRead, dr, optExec bool,
 	pl, f int, qfile string, ps map[string]struct{}) *Replica {
 	cmap.SHARD_COUNT = 32768
 
@@ -89,10 +96,13 @@ func NewReplica(rid int, addrs []string, exec, dr, optExec bool,
 
 		cmdDescs:  cmap.New(),
 		delivered: cmap.New(),
-		history:   make([]commandStaticDesc, HISTORY_SIZE),
-		keys:      make(map[state.Key]keyInfo),
+
+		keys:    make(map[state.Key]keyInfo),
+		reads:   make(map[CommandId]*readDesc),
+		history: make([]commandStaticDesc, HISTORY_SIZE),
 
 		optExec:     optExec,
+		fastRead:    fastRead,
 		deliverChan: make(chan CommandId, smr.CHAN_BUFFER_SIZE),
 
 		poolLevel:    pl,
@@ -163,20 +173,28 @@ func (r *Replica) run() {
 	for !r.Shutdown {
 		select {
 		case cmdId := <-r.deliverChan:
-			r.getCmdDesc(cmdId, "deliver", nil)
+			if rDesc, exists := r.reads[cmdId]; exists {
+				r.deliverReadDesc(rDesc, cmdId)
+			} else {
+				r.getCmdDesc(cmdId, "deliver", nil)
+			}
 
 		case propose := <-r.ProposeChan:
 			cmdId.ClientId = propose.ClientId
 			cmdId.SeqNum = propose.CommandId
-			dep := func() Dep {
-				if !r.AQ.Contains(r.Id) {
-					return nil
+			if r.fastRead && propose.Command.Op == state.GET {
+				r.handleRead(cmdId, propose)
+			} else {
+				dep := func() Dep {
+					if !r.AQ.Contains(r.Id) {
+						return nil
+					}
+					return r.getDepAndUpdateInfo(propose.Command, cmdId)
+				}()
+				desc := r.getCmdDesc(cmdId, propose, dep)
+				if desc == nil {
+					log.Fatal("Got propose for the delivered command", cmdId)
 				}
-				return r.getDepAndUpdateInfo(propose.Command, cmdId)
-			}()
-			desc := r.getCmdDesc(cmdId, propose, dep)
-			if desc == nil {
-				log.Fatal("Got propose for the delivered command", cmdId)
 			}
 
 		case m := <-r.cs.fastAckChan:
@@ -235,9 +253,7 @@ func (r *Replica) run() {
 	}
 }
 
-func (r *Replica) handlePropose(msg *smr.GPropose,
-	desc *commandDesc, cmdId CommandId) {
-
+func (r *Replica) handlePropose(msg *smr.GPropose, desc *commandDesc, cmdId CommandId) {
 	if r.status != NORMAL || desc.phase != START || desc.propose != nil {
 		return
 	}
@@ -278,6 +294,39 @@ func (r *Replica) handlePropose(msg *smr.GPropose,
 		}
 	}
 	r.handleFastAck(fastAck, desc)
+}
+
+func (r *Replica) handleRead(cmdId CommandId, msg *smr.GPropose) {
+	if !r.AQ.Contains(r.Id) {
+		return
+	}
+
+	if !msg.Collocated {
+		slowAck := &MLightSlowAck{
+			Replica: r.Id,
+			Ballot:  r.ballot,
+			CmdId:   cmdId,
+		}
+		r.sender.SendToClient(msg.ClientId, slowAck, r.cs.lightSlowAckRPC)
+		return
+	}
+
+	rDesc := &readDesc{
+		dep:     r.getDep(msg.Command),
+		propose: msg,
+	}
+	r.reads[cmdId] = rDesc
+
+	for _, depCmdId := range rDesc.dep {
+		depDesc := r.getCmdDesc(depCmdId, nil, nil)
+		if depDesc == nil {
+			continue
+		}
+		depDesc.successorsL.Lock()
+		depDesc.successors = append(depDesc.successors, cmdId)
+		depDesc.successorsL.Unlock()
+	}
+	r.deliverReadDesc(rDesc, cmdId)
 }
 
 func (r *Replica) handleFastAck(msg *MFastAck, desc *commandDesc) {
@@ -466,6 +515,28 @@ func (r *Replica) deliver(desc *commandDesc, cmdId CommandId) {
 	}
 }
 
+func (r *Replica) deliverReadDesc(rDesc *readDesc, cmdId CommandId) {
+	if r.delivered.Has(cmdId.String()) || !r.Exec {
+		return
+	}
+
+	for _, cmdIdPrime := range rDesc.dep {
+		if !r.delivered.Has(cmdIdPrime.String()) {
+			return
+		}
+	}
+
+	r.delivered.Set(cmdId.String(), struct{}{})
+	dlog.Printf("Executing " + rDesc.propose.Command.String())
+	v := rDesc.propose.Command.Execute(r.State)
+
+	if !r.Dreply {
+		return
+	}
+
+	r.repchan.readReply(rDesc.propose, cmdId, v)
+}
+
 func (r *Replica) getCmdDesc(cmdId CommandId, msg interface{}, dep Dep) *commandDesc {
 	key := cmdId.String()
 	if r.delivered.Has(key) {
@@ -633,6 +704,22 @@ func (r *Replica) handleMsg(m interface{}, desc *commandDesc, cmdId CommandId) b
 
 func (r *Replica) leader() int32 {
 	return smr.Leader(r.ballot, r.N)
+}
+
+func (r *Replica) getDep(cmd state.Command) Dep {
+	dep := []CommandId{}
+	keysOfCmd := keysOf(cmd)
+
+	for _, key := range keysOfCmd {
+		info, exists := r.keys[key]
+
+		if exists {
+			cdep := info.getConflictCmds(cmd)
+			dep = append(dep, cdep...)
+		}
+	}
+
+	return dep
 }
 
 func (r *Replica) getDepAndUpdateInfo(cmd state.Command, cmdId CommandId) Dep {
