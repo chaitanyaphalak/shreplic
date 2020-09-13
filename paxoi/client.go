@@ -211,3 +211,13 @@ func (c *Client) handleReply(r *MReply) {
 	c.val = r.Rep
 	c.handleFastAck(f, true)
 }
+
+func (c *Client) handleReadReply(r *MReadReply) {
+	f := newFastAck()
+	f.Replica = r.Replica
+	f.Ballot = r.Ballot
+	f.CmdId = r.CmdId
+	f.Dep = nil
+	c.val = r.Rep
+	c.handleFastAck(f, true) // <-- this `true` is not a bug
+}
