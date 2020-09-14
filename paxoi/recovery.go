@@ -3,6 +3,7 @@ package paxoi
 import (
 	"sync"
 
+	"github.com/orcaman/concurrent-map"
 	"github.com/vonaka/shreplic/server/smr"
 	"github.com/vonaka/shreplic/state"
 )
@@ -149,47 +150,67 @@ func (r *Replica) handleShareState(msg *MShareState) {
 }
 
 func (r *Replica) handleSync(msg *MSync) {
-/*	if r.ballot > msg.Ballot || (r.ballot == msg.Ballot && r.status == NORMAL) {
+	if r.ballot > msg.Ballot || (r.ballot == msg.Ballot && r.status == NORMAL) {
 		return
 	}
 
 	r.status = NORMAL
 	r.ballot = msg.Ballot
 	r.cballot = msg.Ballot
+	r.AQ = r.qs.AQ(r.ballot)
 
-	proposes := make(map[CmdId]struct{})
+	proposes := make(map[CommandId]*smr.GPropose)
 
 	r.stopDescs()
-	// clear cmdDescs
-	r.cmdDescs.IterCb(func(_ string, v interface{}) {
+	// clear cmdDescs:
+	r.cmdDescs.IterCb(func(cmdIdStr string, v interface{}) {
 		desc := v.(*commandDesc)
 		go func(desc *commandDesc) {
 			if desc.propose != nil {
+				cmdId := CommandId{
+					ClientId: desc.propose.ClientId,
+					SeqNum:   desc.propose.CommandId,
+				}
 				proposes[cmdId] = desc.propose
 			}
 			desc.msgs = nil
-			desc.stopChan == nil
+			desc.stopChan = nil
 			desc.fastAndSlowAcks.Free()
-			r.cmdDescs.Remove(cmdId.String())
 			r.freeDesc(desc)
-		}
+		}(desc)
 	})
+	r.cmdDescs = cmap.New()
 
 	committed := make(map[CommandId]struct{})
 
 	for cmdId, phase := range msg.Phases {
-		desc := getCmdDesc(cmdId, nil, nil)
+		propose, exists := proposes[cmdId]
+		if !exists {
+			continue
+		}
+
+		desc := r.getCmdDesc(cmdId, nil, nil)
 		if desc == nil {
 			continue
 		}
 		desc.cmd = msg.Cmds[cmdId]
 		desc.dep = msg.Deps[cmdId]
 		desc.phase = phase
+		desc.propose = propose
+		desc.proposeDep = msg.Deps[cmdId]
 
 		if phase == COMMIT {
 			committed[cmdId] = struct{}{}
+		} else if phase != ACCEPT {
+			desc.phase = ACCEPT
 		}
-	}*/
+	}
+
+	go func() {
+		for committedCmdId := range committed {
+			r.deliverChan <- committedCmdId
+		}
+	}()
 }
 
 func (r *Replica) stopDescs() {
