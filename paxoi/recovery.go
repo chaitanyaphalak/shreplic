@@ -149,7 +149,7 @@ func (r *Replica) handleShareState(msg *MShareState) {
 }
 
 func (r *Replica) handleSync(msg *MSync) {
-	if r.ballot > msg.Ballot || (r.ballot == msg.Ballot && r.status == NORMAL) {
+/*	if r.ballot > msg.Ballot || (r.ballot == msg.Ballot && r.status == NORMAL) {
 		return
 	}
 
@@ -157,9 +157,39 @@ func (r *Replica) handleSync(msg *MSync) {
 	r.ballot = msg.Ballot
 	r.cballot = msg.Ballot
 
-	//for cmdId, phase := range msg.Phases {
-	// TODO
-	//}
+	proposes := make(map[CmdId]struct{})
+
+	r.stopDescs()
+	// clear cmdDescs
+	r.cmdDescs.IterCb(func(_ string, v interface{}) {
+		desc := v.(*commandDesc)
+		go func(desc *commandDesc) {
+			if desc.propose != nil {
+				proposes[cmdId] = desc.propose
+			}
+			desc.msgs = nil
+			desc.stopChan == nil
+			desc.fastAndSlowAcks.Free()
+			r.cmdDescs.Remove(cmdId.String())
+			r.freeDesc(desc)
+		}
+	})
+
+	committed := make(map[CommandId]struct{})
+
+	for cmdId, phase := range msg.Phases {
+		desc := getCmdDesc(cmdId, nil, nil)
+		if desc == nil {
+			continue
+		}
+		desc.cmd = msg.Cmds[cmdId]
+		desc.dep = msg.Deps[cmdId]
+		desc.phase = phase
+
+		if phase == COMMIT {
+			committed[cmdId] = struct{}{}
+		}
+	}*/
 }
 
 func (r *Replica) stopDescs() {

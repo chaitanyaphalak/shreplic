@@ -1448,6 +1448,7 @@ func (r *Replica) handleTryPreAccept(tpa *TryPreAccept) {
 }
 
 func (r *Replica) findPreAcceptConflicts(cmds []state.Command, replica int32, instance int32, seq int32, deps []int32) (bool, int32, int32) {
+	return false, 0, 0
 	inst := r.InstanceSpace[replica][instance]
 	if inst != nil && len(inst.Cmds) > 0 {
 		if inst.Status >= ACCEPTED {
