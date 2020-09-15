@@ -64,7 +64,7 @@ type Replica struct {
 	CommittedUpTo         []int32       // highest committed instance per replica that this replica knows about
 	ExecedUpTo            []int32       // instance up to which all commands have been executed (including iteslf)
 	exec                  *Exec
-	conflicts             []map[state.Key]int32
+	conflicts             []map[state.Key]*InstPair
 	maxSeqPerKey          map[state.Key]int32
 	maxSeq                int32
 	latestCPReplica       int32
@@ -76,6 +76,11 @@ type Replica struct {
 	batchWait             int
 	transconf             bool
 	ignoreSeq             bool
+}
+
+type InstPair struct {
+	last      int32
+	lastWrite int32
 }
 
 type Instance struct {
@@ -138,7 +143,7 @@ func NewReplica(id int, peerAddrList []string, thrifty bool, exec bool, lread bo
 		make([]int32, len(peerAddrList)),
 		make([]int32, len(peerAddrList)),
 		nil,
-		make([]map[state.Key]int32, len(peerAddrList)),
+		make([]map[state.Key]*InstPair, len(peerAddrList)),
 		make(map[state.Key]int32),
 		0,
 		0,
@@ -164,7 +169,7 @@ func NewReplica(id int, peerAddrList []string, thrifty bool, exec bool, lread bo
 		r.crtInstance[i] = -1
 		r.ExecedUpTo[i] = -1
 		r.CommittedUpTo[i] = -1
-		r.conflicts[i] = make(map[state.Key]int32, HT_INIT_SIZE)
+		r.conflicts[i] = make(map[state.Key]*InstPair, HT_INIT_SIZE)
 	}
 
 	r.exec = &Exec{r}
@@ -664,7 +669,7 @@ func (r *Replica) bcastCommit(replica int32, instance int32) {
 
 func (r *Replica) clearHashtables() {
 	for q := 0; q < r.N; q++ {
-		r.conflicts[q] = make(map[state.Key]int32, HT_INIT_SIZE)
+		r.conflicts[q] = make(map[state.Key]*InstPair, HT_INIT_SIZE)
 	}
 }
 
@@ -680,12 +685,21 @@ func (r *Replica) updateCommitted(replica int32) {
 
 func (r *Replica) updateConflicts(cmds []state.Command, replica int32, instance int32, seq int32) {
 	for i := 0; i < len(cmds); i++ {
-		if d, present := r.conflicts[replica][cmds[i].K]; present {
-			if d < instance {
-				r.conflicts[replica][cmds[i].K] = instance
+		if dpair, present := r.conflicts[replica][cmds[i].K]; present {
+			if dpair.last < instance {
+				r.conflicts[replica][cmds[i].K].last = instance
+			}
+			if dpair.lastWrite < instance && cmds[i].Op != state.GET {
+				r.conflicts[replica][cmds[i].K].lastWrite = instance
 			}
 		} else {
-			r.conflicts[replica][cmds[i].K] = instance
+			r.conflicts[replica][cmds[i].K] = &InstPair{
+				last:      instance,
+				lastWrite: -1,
+			}
+			if cmds[i].Op != state.GET {
+				r.conflicts[replica][cmds[i].K].lastWrite = instance
+			}
 		}
 		if s, present := r.maxSeqPerKey[cmds[i].K]; present {
 			if s < seq {
@@ -704,7 +718,12 @@ func (r *Replica) updateAttributes(cmds []state.Command, seq int32, deps []int32
 			continue
 		}
 		for i := 0; i < len(cmds); i++ {
-			if d, present := (r.conflicts[q])[cmds[i].K]; present {
+			if dpair, present := (r.conflicts[q])[cmds[i].K]; present {
+				d := dpair.lastWrite
+				if cmds[i].Op != state.GET {
+					d = dpair.last
+				}
+
 				if d > deps[q] {
 					deps[q] = d
 					if seq <= r.InstanceSpace[q][d].Seq {
