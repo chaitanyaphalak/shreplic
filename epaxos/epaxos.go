@@ -75,6 +75,7 @@ type Replica struct {
 	maxRecvBallot         int32
 	batchWait             int
 	transconf             bool
+	ignoreSeq             bool
 }
 
 type Instance struct {
@@ -147,7 +148,9 @@ func NewReplica(id int, peerAddrList []string, thrifty bool, exec bool, lread bo
 		false,
 		-1,
 		batchWait,
-		transconf}
+		transconf,
+		true,
+	}
 
 	r.Beacon = beacon
 	r.Durable = durable
@@ -727,7 +730,7 @@ func (r *Replica) updateAttributes(cmds []state.Command, seq int32, deps []int32
 
 func (r *Replica) mergeAttributes(seq1 int32, deps1 []int32, seq2 int32, deps2 []int32) (int32, []int32, bool) {
 	equal := true
-	if seq1 != seq2 {
+	if seq1 != seq2 && !r.ignoreSeq {
 		equal = false
 		if seq2 > seq1 {
 			seq1 = seq2
