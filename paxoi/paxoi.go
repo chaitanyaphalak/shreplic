@@ -409,7 +409,7 @@ func (r *Replica) commonCaseFastAck(msg *MFastAck, desc *commandDesc) {
 		return
 	}
 
-	desc.fastAndSlowAcks.Add(msg.Replica, false, msg)
+	desc.fastAndSlowAcks.Add(msg.Replica, msg.Replica == r.leader(), msg)
 }
 
 func getFastAndSlowAcksHandler(r *Replica, desc *commandDesc) smr.MsgSetHandler {

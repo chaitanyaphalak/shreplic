@@ -203,6 +203,18 @@ func (r *Replica) handleSync(msg *MSync) {
 			committed[cmdId] = struct{}{}
 		} else if phase != ACCEPT {
 			desc.phase = ACCEPT
+
+			lightSlowAck := &MLightSlowAck{
+				Replica: r.Id,
+				Ballot:  r.ballot,
+				CmdId:   cmdId,
+			}
+			if !r.optExec {
+				r.batcher.SendLightSlowAck(lightSlowAck)
+			} else {
+				r.batcher.SendLightSlowAckClient(lightSlowAck, desc.propose.ClientId)
+			}
+			defer r.handleLightSlowAck(lightSlowAck, desc)
 		}
 	}
 
