@@ -43,6 +43,7 @@ type Replica struct {
 	poolLevel    int
 	routineCount int
 
+	recover       chan struct{}
 	newLeaderAcks *smr.MsgSet
 }
 
@@ -157,6 +158,13 @@ func NewReplica(rid int, addrs []string, exec, fastRead, dr, optExec bool,
 	return r
 }
 
+func (r *Replica) BeTheLeader(_ *smr.BeTheLeaderArgs, _ *smr.BeTheLeaderReply) error {
+	if len(r.history) > 4 {
+		r.recover <- struct{}{}
+	}
+	return nil
+}
+
 func (r *Replica) run() {
 	r.ConnectToPeers()
 	latencies := r.ComputeClosestPeers()
@@ -172,6 +180,14 @@ func (r *Replica) run() {
 	var cmdId CommandId
 	for !r.Shutdown {
 		select {
+		case <-r.recover:
+			newLeader := &MNewLeader{
+				Replica: r.Id,
+				Ballot:  r.ballot+1,
+			}
+			r.sender.SendToAll(newLeader, r.cs.newLeaderRPC)
+			r.handleNewLeader(newLeader)
+
 		case cmdId := <-r.deliverChan:
 			if rDesc, exists := r.reads[cmdId]; exists {
 				r.deliverReadDesc(rDesc, cmdId)
