@@ -150,6 +150,10 @@ func (c *Client) handleMsgs() {
 		case m := <-c.cs.replyChan:
 			reply := m.(*MReply)
 			c.handleReply(reply)
+
+		case m := <-c.cs.readReplyChan:
+			reply := m.(*MReadReply)
+			c.handleReadReply(reply)
 		}
 	}
 }
