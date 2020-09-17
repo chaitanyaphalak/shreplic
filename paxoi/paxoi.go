@@ -158,12 +158,13 @@ func NewReplica(rid int, addrs []string, exec, fastRead, dr, optExec bool,
 	return r
 }
 
-func (r *Replica) BeTheLeader(_ *smr.BeTheLeaderArgs, _ *smr.BeTheLeaderReply) error {
+// TODO
+/*func (r *Replica) BeTheLeader(_ *smr.BeTheLeaderArgs, _ *smr.BeTheLeaderReply) error {
 	if len(r.history) > 4 {
 		r.recover <- struct{}{}
 	}
 	return nil
-}
+}*/
 
 func (r *Replica) run() {
 	r.ConnectToPeers()
