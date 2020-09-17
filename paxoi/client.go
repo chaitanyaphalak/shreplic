@@ -100,7 +100,7 @@ func (c *Client) handleMsgs() {
 
 		case m := <-c.cs.slowAckChan:
 			slowAck := m.(*MSlowAck)
-			if _, exists := c.alreadySlow[slowAck.CmdId]; !exists {
+			if _, exists := c.alreadySlow[slowAck.CmdId]; !c.Reading && !exists {
 				c.slowPaths++
 				c.alreadySlow[slowAck.CmdId] = struct{}{}
 			}
@@ -108,7 +108,7 @@ func (c *Client) handleMsgs() {
 
 		case m := <-c.cs.lightSlowAckChan:
 			lightSlowAck := m.(*MLightSlowAck)
-			if _, exists := c.alreadySlow[lightSlowAck.CmdId]; !exists {
+			if _, exists := c.alreadySlow[lightSlowAck.CmdId]; !c.Reading && !exists {
 				c.slowPaths++
 				c.alreadySlow[lightSlowAck.CmdId] = struct{}{}
 			}
@@ -121,7 +121,7 @@ func (c *Client) handleMsgs() {
 			}
 			for _, s := range acks.LightSlowAcks {
 				ls := s
-				if _, exists := c.alreadySlow[ls.CmdId]; !exists {
+				if _, exists := c.alreadySlow[ls.CmdId]; !c.Reading && !exists {
 					c.slowPaths++
 					c.alreadySlow[ls.CmdId] = struct{}{}
 				}
@@ -138,7 +138,7 @@ func (c *Client) handleMsgs() {
 				if !IsNilDepOfCmdId(ack.CmdId, ack.Dep) {
 					fastAck.Dep = ack.Dep
 				} else {
-					if _, exists := c.alreadySlow[fastAck.CmdId]; !exists {
+					if _, exists := c.alreadySlow[fastAck.CmdId]; !c.Reading && !exists {
 						c.slowPaths++
 						c.alreadySlow[fastAck.CmdId] = struct{}{}
 					}

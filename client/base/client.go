@@ -40,6 +40,7 @@ type Client struct {
 	MaxLatency float64
 
 	Fast       bool
+	Reading    bool
 	Verbose    bool
 	LocalRead  bool
 	Leaderless bool
@@ -215,6 +216,7 @@ func (c *Client) Disconnect() {
 }
 
 func (c *Client) Write(key int64, value []byte) {
+	c.Reading = false
 	c.Seqnum++
 	args := smr.Propose{
 		CommandId: c.Seqnum,
@@ -232,6 +234,7 @@ func (c *Client) Write(key int64, value []byte) {
 }
 
 func (c *Client) Read(key int64) []byte {
+	c.Reading = true && c.LocalRead
 	c.Seqnum++
 	args := smr.Propose{
 		CommandId: c.Seqnum,
@@ -249,6 +252,7 @@ func (c *Client) Read(key int64) []byte {
 }
 
 func (c *Client) Scan(key, count int64) []byte {
+	c.Reading = false
 	c.Seqnum++
 	args := smr.Propose{
 		CommandId: c.Seqnum,
