@@ -17,7 +17,6 @@ func (r *Replica) handleNewLeader(msg *MNewLeader) {
 	r.ballot = msg.Ballot
 
 	r.stopDescs()
-	r.reinitNewLeaderAcks() //TODO: move this to ``recover()'' function
 
 	newLeaderAck := &MNewLeaderAck{
 		Replica: r.Id,

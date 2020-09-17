@@ -186,6 +186,7 @@ func (r *Replica) run() {
 				Ballot:  r.ballot+1,
 			}
 			r.sender.SendToAll(newLeader, r.cs.newLeaderRPC)
+			r.reinitNewLeaderAcks()
 			r.handleNewLeader(newLeader)
 
 		case cmdId := <-r.deliverChan:

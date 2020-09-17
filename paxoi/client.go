@@ -200,6 +200,7 @@ func (c *Client) handleFastAndSlowAcks(leaderMsg interface{}, msgs []interface{}
 	c.delivered[cmdId] = struct{}{}
 
 	c.Println("Slow Paths:", c.slowPaths)
+	println("Slow Paths:", c.slowPaths)
 	c.Println("Returning:", c.val.String())
 	c.reinitFastAndSlowAcks()
 	c.ResChan <- c.val
