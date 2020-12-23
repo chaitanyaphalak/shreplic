@@ -29,7 +29,6 @@ func NewReplyChan(r *Replica) *replyChan {
 	}
 
 	go func() {
-		slot := 0
 		for !r.Shutdown {
 			select {
 			case args := <-rc.args:
@@ -49,9 +48,8 @@ func NewReplyChan(r *Replica) *replyChan {
 					}
 					r.sender.SendToClient(args.propose.ClientId, reply, r.cs.replyRPC)
 				}
-
-				args.finish <- slot
-				slot = (slot + 1) % HISTORY_SIZE
+				r.historySize = (r.historySize % HISTORY_SIZE) + 1
+				args.finish <- (r.historySize - 1)
 
 			case args := <-rc.readArgs:
 				reply := &MReadReply{

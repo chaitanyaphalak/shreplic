@@ -180,6 +180,9 @@ func (c *Client) handleSlowAck(s *MSlowAck) {
 }
 
 func (c *Client) handleLightSlowAck(ls *MLightSlowAck) {
+	if _, exists := c.delivered[ls.CmdId]; exists {
+		return
+	}
 	f := newFastAck()
 	f.Replica = ls.Replica
 	f.Ballot = ls.Ballot
@@ -208,6 +211,9 @@ func (c *Client) handleFastAndSlowAcks(leaderMsg interface{}, msgs []interface{}
 }
 
 func (c *Client) handleReply(r *MReply) {
+	if _, exists := c.delivered[r.CmdId]; exists {
+		return
+	}
 	f := newFastAck()
 	f.Replica = r.Replica
 	f.Ballot = r.Ballot
@@ -218,6 +224,9 @@ func (c *Client) handleReply(r *MReply) {
 }
 
 func (c *Client) handleReadReply(r *MReadReply) {
+	if _, exists := c.delivered[r.CmdId]; exists {
+		return
+	}
 	f := newFastAck()
 	f.Replica = r.Replica
 	f.Ballot = r.Ballot

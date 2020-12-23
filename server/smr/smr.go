@@ -562,3 +562,7 @@ func storeFullFileName(repId int) string {
 func Leader(ballot int32, repNum int) int32 {
 	return ballot % int32(repNum)
 }
+
+func NextBallotOf(rid int32, oldBallot int32, repNum int) int32 {
+	return (oldBallot / int32(repNum) + 1) * int32(repNum) + rid
+}

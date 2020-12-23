@@ -1,6 +1,7 @@
 package paxoi
 
 import (
+	"log"
 	"sync"
 
 	"github.com/orcaman/concurrent-map"
@@ -12,6 +13,7 @@ func (r *Replica) handleNewLeader(msg *MNewLeader) {
 	if r.ballot >= msg.Ballot {
 		return
 	}
+	log.Println("Recovering...")
 
 	r.status = RECOVERING
 	r.ballot = msg.Ballot
@@ -112,14 +114,22 @@ func (r *Replica) handleShareState(msg *MShareState) {
 	cmds := make(map[CommandId]state.Command)
 	deps := make(map[CommandId]Dep)
 
-	for _, sDesc := range r.history {
-		sDesc.defered()
+	for slot, sDesc := range r.history {
+		if slot >= r.historySize {
+			break
+		}
+		if sDesc.defered != nil {
+			sDesc.defered()
+		}
 	}
 	r.cmdDescs.IterCb(func(_ string, v interface{}) {
 		v.(*commandDesc).defered()
 	})
 
-	for _, sDesc := range r.history {
+	for slot, sDesc := range r.history {
+		if slot >= r.historySize {
+			break
+		}
 		phases[sDesc.cmdId] = sDesc.phase
 		cmds[sDesc.cmdId] = sDesc.cmd
 		deps[sDesc.cmdId] = sDesc.dep
@@ -158,62 +168,71 @@ func (r *Replica) handleSync(msg *MSync) {
 	r.cballot = msg.Ballot
 	r.AQ = r.qs.AQ(r.ballot)
 
-	proposes := make(map[CommandId]*smr.GPropose)
-
 	r.stopDescs()
 	// clear cmdDescs:
 	r.cmdDescs.IterCb(func(cmdIdStr string, v interface{}) {
 		desc := v.(*commandDesc)
-		go func(desc *commandDesc) {
-			if desc.propose != nil {
-				cmdId := CommandId{
-					ClientId: desc.propose.ClientId,
-					SeqNum:   desc.propose.CommandId,
-				}
-				proposes[cmdId] = desc.propose
-			}
 			desc.msgs = nil
 			desc.stopChan = nil
 			desc.fastAndSlowAcks.Free()
 			r.freeDesc(desc)
-		}(desc)
 	})
 	r.cmdDescs = cmap.New()
 
 	committed := make(map[CommandId]struct{})
+	clientCmds := make(map[int32]CommandId)
 
 	for cmdId, phase := range msg.Phases {
-		propose, exists := proposes[cmdId]
-		if !exists {
-			continue
-		}
-
 		desc := r.getCmdDesc(cmdId, nil, nil)
-		if desc == nil {
-			continue
+		if desc != nil {
+			desc.phase = phase
+			desc.cmd = msg.Cmds[cmdId]
+			desc.dep = msg.Deps[cmdId]
+			desc.proposeDep = msg.Deps[cmdId]
+
+			if phase == COMMIT {
+				committed[cmdId] = struct{}{}
+			} else if phase != ACCEPT {
+				desc.phase = ACCEPT
+			}
 		}
-		desc.cmd = msg.Cmds[cmdId]
-		desc.dep = msg.Deps[cmdId]
-		desc.phase = phase
-		desc.propose = propose
-		desc.proposeDep = msg.Deps[cmdId]
 
-		if phase == COMMIT {
-			committed[cmdId] = struct{}{}
-		} else if phase != ACCEPT {
-			desc.phase = ACCEPT
+		if propose, exists := r.proposes[cmdId]; exists {
+			if desc != nil {
+				desc.propose = propose
+			}
+			oldCmdId, exists := clientCmds[cmdId.ClientId]
+			if !exists || oldCmdId.SeqNum < cmdId.SeqNum {
+				clientCmds[cmdId.ClientId] = cmdId
+			}
+		}
+	}
 
+	for _, cmdId := range clientCmds {
+		if r.AQ.Contains(r.Id) {
+			propose := r.proposes[cmdId]
 			lightSlowAck := &MLightSlowAck{
 				Replica: r.Id,
 				Ballot:  r.ballot,
 				CmdId:   cmdId,
 			}
-			if !r.optExec {
+			if !r.optExec || r.Id == r.leader() {
 				r.batcher.SendLightSlowAck(lightSlowAck)
+				reply := &MReply{
+					Replica: r.Id,
+					Ballot:  r.ballot,
+					CmdId:   cmdId,
+					Dep:     msg.Deps[cmdId],
+					Rep:     state.NIL(),
+				}
+				r.sender.SendToClient(propose.ClientId, reply, r.cs.replyRPC)
 			} else {
-				r.batcher.SendLightSlowAckClient(lightSlowAck, desc.propose.ClientId)
+				r.batcher.SendLightSlowAckClient(lightSlowAck, propose.ClientId)
 			}
-			defer r.handleLightSlowAck(lightSlowAck, desc)
+			desc := r.getCmdDesc(cmdId, nil, nil)
+			if desc != nil {
+				defer r.handleLightSlowAck(lightSlowAck, desc)
+			}
 		}
 	}
 
@@ -222,6 +241,8 @@ func (r *Replica) handleSync(msg *MSync) {
 			r.deliverChan <- committedCmdId
 		}
 	}()
+
+	log.Println("Recovered!")
 }
 
 func (r *Replica) stopDescs() {

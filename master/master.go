@@ -24,17 +24,18 @@ var (
 )
 
 type Master struct {
-	N          int
-	nodeList   []string
-	addrList   []string
-	portList   []int
-	lock       *sync.Mutex
-	nodes      []*rpc.Client
-	leader     []bool
-	alive      []bool
-	latencies  []float64
-	finishInit bool
-	initCond   *sync.Cond
+	N             int
+	nodeList      []string
+	addrList      []string
+	portList      []int
+	lock          *sync.Mutex
+	nodes         []*rpc.Client
+	leader        []bool
+	alive         []bool
+	latencies     []float64
+	finishInit    bool
+	initCond      *sync.Cond
+	defaultLeader int
 }
 
 func main() {
@@ -44,16 +45,17 @@ func main() {
 	log.Printf("...waiting for %d replicas", *numNodes)
 
 	master := &Master{
-		N:          *numNodes,
-		nodeList:   make([]string, 0, *numNodes),
-		addrList:   make([]string, 0, *numNodes),
-		portList:   make([]int, 0, *numNodes),
-		lock:       new(sync.Mutex),
-		nodes:      make([]*rpc.Client, *numNodes),
-		leader:     make([]bool, *numNodes),
-		alive:      make([]bool, *numNodes),
-		latencies:  make([]float64, *numNodes),
-		finishInit: false,
+		N:             *numNodes,
+		nodeList:      make([]string, 0, *numNodes),
+		addrList:      make([]string, 0, *numNodes),
+		portList:      make([]int, 0, *numNodes),
+		lock:          new(sync.Mutex),
+		nodes:         make([]*rpc.Client, *numNodes),
+		leader:        make([]bool, *numNodes),
+		alive:         make([]bool, *numNodes),
+		latencies:     make([]float64, *numNodes),
+		finishInit:    false,
+		defaultLeader: 0,
 	}
 	master.initCond = sync.NewCond(master.lock)
 
@@ -198,10 +200,15 @@ func (master *Master) Register(args *defs.RegisterArgs, reply *defs.RegisterRepl
 
 		minLatency := math.MaxFloat64
 		leader := 0
-		for i := 0; i < len(master.leader); i++ {
-			if master.latencies[i] < minLatency {
-				minLatency = master.latencies[i]
-				leader = i
+
+		if master.defaultLeader != -1 {
+			leader = master.defaultLeader
+		} else {
+			for i := 0; i < len(master.leader); i++ {
+				if master.latencies[i] < minLatency {
+					minLatency = master.latencies[i]
+					leader = i
+				}
 			}
 		}
 

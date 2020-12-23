@@ -27,9 +27,10 @@ type Replica struct {
 	batcher *Batcher
 	repchan *replyChan
 
-	keys    map[state.Key]keyInfo
-	reads   map[CommandId]*readDesc
-	history []commandStaticDesc
+	keys        map[state.Key]keyInfo
+	reads       map[CommandId]*readDesc
+	history     []commandStaticDesc
+	historySize int
 
 	AQ smr.Quorum
 	qs smr.QuorumSet
@@ -45,6 +46,9 @@ type Replica struct {
 
 	recover       chan struct{}
 	newLeaderAcks *smr.MsgSet
+
+	// TODO: get rid of this
+	proposes map[CommandId]*smr.GPropose
 }
 
 type commandDesc struct {
@@ -98,9 +102,10 @@ func NewReplica(rid int, addrs []string, exec, fastRead, dr, optExec bool,
 		cmdDescs:  cmap.New(),
 		delivered: cmap.New(),
 
-		keys:    make(map[state.Key]keyInfo),
-		reads:   make(map[CommandId]*readDesc),
-		history: make([]commandStaticDesc, HISTORY_SIZE),
+		keys:        make(map[state.Key]keyInfo),
+		reads:       make(map[CommandId]*readDesc),
+		history:     make([]commandStaticDesc, HISTORY_SIZE),
+		historySize: 0,
 
 		optExec:     optExec,
 		fastRead:    fastRead,
@@ -109,11 +114,15 @@ func NewReplica(rid int, addrs []string, exec, fastRead, dr, optExec bool,
 		poolLevel:    pl,
 		routineCount: 0,
 
+		recover: make(chan struct{}, 8),
+
 		descPool: sync.Pool{
 			New: func() interface{} {
 				return &commandDesc{}
 			},
 		},
+
+		proposes: make(map[CommandId]*smr.GPropose),
 	}
 
 	useFastAckPool = pl > 1
@@ -158,13 +167,13 @@ func NewReplica(rid int, addrs []string, exec, fastRead, dr, optExec bool,
 	return r
 }
 
-// TODO
-/*func (r *Replica) BeTheLeader(_ *smr.BeTheLeaderArgs, _ *smr.BeTheLeaderReply) error {
-	if len(r.history) > 4 {
+// TODO: do something more elegant
+func (r *Replica) BeTheLeader(_ *smr.BeTheLeaderArgs, _ *smr.BeTheLeaderReply) error {
+	if !r.delivered.IsEmpty() {
 		r.recover <- struct{}{}
 	}
 	return nil
-}*/
+}
 
 func (r *Replica) run() {
 	r.ConnectToPeers()
@@ -184,7 +193,17 @@ func (r *Replica) run() {
 		case <-r.recover:
 			newLeader := &MNewLeader{
 				Replica: r.Id,
-				Ballot:  r.ballot+1,
+				Ballot:  r.ballot,
+			}
+			quorumAlive := false
+			for !quorumAlive {
+				newLeader.Ballot = smr.NextBallotOf(r.Id, newLeader.Ballot, r.N)
+				quorumAlive = true
+				for rid := range r.qs.AQ(newLeader.Ballot) {
+					if rid != r.Id {
+						quorumAlive = r.Alive[rid] && quorumAlive
+					}
+				}
 			}
 			r.sender.SendToAll(newLeader, r.cs.newLeaderRPC)
 			r.reinitNewLeaderAcks()
@@ -200,6 +219,7 @@ func (r *Replica) run() {
 		case propose := <-r.ProposeChan:
 			cmdId.ClientId = propose.ClientId
 			cmdId.SeqNum = propose.CommandId
+			r.proposes[cmdId] = propose
 			if r.fastRead && propose.Command.Op == state.GET {
 				r.handleRead(cmdId, propose)
 			} else {
@@ -211,7 +231,7 @@ func (r *Replica) run() {
 				}()
 				desc := r.getCmdDesc(cmdId, propose, dep)
 				if desc == nil {
-					log.Fatal("Got propose for the delivered command", cmdId)
+					log.Fatal("Got propose for the delivered command ", cmdId)
 				}
 			}
 
@@ -481,8 +501,10 @@ func (r *Replica) deliver(desc *commandDesc, cmdId CommandId) {
 	//       is that possible ?
 	//
 	//       Don't think so
+	//       Now I do
+	// TODO: How is that possible ?
 
-	if r.delivered.Has(cmdId.String()) || !r.Exec {
+	if desc.propose == nil || r.delivered.Has(cmdId.String()) || !r.Exec {
 		return
 	}
 
@@ -566,7 +588,7 @@ func (r *Replica) getCmdDesc(cmdId CommandId, msg interface{}, dep Dep) *command
 	r.cmdDescs.Upsert(key, nil,
 		func(exists bool, mapV, _ interface{}) interface{} {
 			defer func() {
-				if dep != nil {
+				if dep != nil && desc.proposeDep == nil {
 					desc.proposeDep = dep
 				}
 			}()
