@@ -564,5 +564,5 @@ func Leader(ballot int32, repNum int) int32 {
 }
 
 func NextBallotOf(rid int32, oldBallot int32, repNum int) int32 {
-	return (oldBallot / int32(repNum) + 1) * int32(repNum) + rid
+	return (oldBallot/int32(repNum)+1)*int32(repNum) + rid
 }

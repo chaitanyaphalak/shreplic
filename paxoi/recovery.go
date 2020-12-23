@@ -172,10 +172,10 @@ func (r *Replica) handleSync(msg *MSync) {
 	// clear cmdDescs:
 	r.cmdDescs.IterCb(func(cmdIdStr string, v interface{}) {
 		desc := v.(*commandDesc)
-			desc.msgs = nil
-			desc.stopChan = nil
-			desc.fastAndSlowAcks.Free()
-			r.freeDesc(desc)
+		desc.msgs = nil
+		desc.stopChan = nil
+		desc.fastAndSlowAcks.Free()
+		r.freeDesc(desc)
 	})
 	r.cmdDescs = cmap.New()
 
@@ -263,7 +263,7 @@ func (r *Replica) reinitNewLeaderAcks() {
 	accept := func(_, _ interface{}) bool {
 		return true
 	}
-	free := func(_ interface{}) { }
+	free := func(_ interface{}) {}
 	Q := smr.NewMajorityOf(r.N)
 	r.newLeaderAcks = r.newLeaderAcks.ReinitMsgSet(Q, accept, free, r.handleNewLeaderAcks)
 }

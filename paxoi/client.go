@@ -23,7 +23,7 @@ type Client struct {
 	ballot    int32
 	delivered map[CommandId]struct{}
 
-	slowPaths int
+	slowPaths   int
 	alreadySlow map[CommandId]struct{}
 }
 
@@ -51,7 +51,7 @@ func NewClient(maddr, collocated string, mport, reqNum, writes, psize, conflict 
 		ballot:    -1,
 		delivered: make(map[CommandId]struct{}),
 
-		slowPaths: 0,
+		slowPaths:   0,
 		alreadySlow: make(map[CommandId]struct{}),
 	}
 
