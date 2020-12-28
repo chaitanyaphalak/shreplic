@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -24,18 +25,18 @@ var (
 )
 
 type Master struct {
-	N             int
-	nodeList      []string
-	addrList      []string
-	portList      []int
-	lock          *sync.Mutex
-	nodes         []*rpc.Client
-	leader        []bool
-	alive         []bool
-	latencies     []float64
-	finishInit    bool
-	initCond      *sync.Cond
-	defaultLeader int
+	N          int
+	nodeList   []string
+	addrList   []string
+	portList   []int
+	lock       *sync.Mutex
+	nodes      []*rpc.Client
+	leader     []bool
+	alive      []bool
+	latencies  []float64
+	finishInit bool
+	initCond   *sync.Cond
+	nextLeader int
 }
 
 func main() {
@@ -45,17 +46,17 @@ func main() {
 	log.Printf("...waiting for %d replicas", *numNodes)
 
 	master := &Master{
-		N:             *numNodes,
-		nodeList:      make([]string, 0, *numNodes),
-		addrList:      make([]string, 0, *numNodes),
-		portList:      make([]int, 0, *numNodes),
-		lock:          new(sync.Mutex),
-		nodes:         make([]*rpc.Client, *numNodes),
-		leader:        make([]bool, *numNodes),
-		alive:         make([]bool, *numNodes),
-		latencies:     make([]float64, *numNodes),
-		finishInit:    false,
-		defaultLeader: 0,
+		N:          *numNodes,
+		nodeList:   make([]string, 0, *numNodes),
+		addrList:   make([]string, 0, *numNodes),
+		portList:   make([]int, 0, *numNodes),
+		lock:       new(sync.Mutex),
+		nodes:      make([]*rpc.Client, *numNodes),
+		leader:     make([]bool, *numNodes),
+		alive:      make([]bool, *numNodes),
+		latencies:  make([]float64, *numNodes),
+		finishInit: false,
+		nextLeader: -1,
 	}
 	master.initCond = sync.NewCond(master.lock)
 
@@ -91,12 +92,18 @@ func (master *Master) run() {
 			log.Printf("Error connecting to replica %d (%v), retrying...", i, addr)
 			time.Sleep(1000000000)
 		} else {
+			btlReply := smr.NewBeTheLeaderReply()
 			if master.leader[i] {
 				err = master.nodes[i].Call("Replica.BeTheLeader",
-					new(smr.BeTheLeaderArgs), new(smr.BeTheLeaderReply))
+					new(smr.BeTheLeaderArgs), btlReply)
 				if err != nil {
 					log.Fatal("Not today Zurg!")
 				}
+				if btlReply.Leader != -1 && btlReply.Leader != int32(i) {
+					master.leader[i] = false
+					master.leader[int(btlReply.Leader)] = true
+				}
+				master.nextLeader = int(btlReply.NextLeader)
 			}
 			i++
 		}
@@ -125,6 +132,26 @@ func (master *Master) run() {
 	master.initCond.Broadcast()
 	master.lock.Unlock()
 
+	beTheLeader := func(i int) error {
+		if master.alive[i] {
+			btlReply := smr.NewBeTheLeaderReply()
+			err := master.nodes[i].Call("Replica.BeTheLeader",
+				new(smr.BeTheLeaderArgs), btlReply)
+			if err == nil {
+				if btlReply.Leader != -1 {
+					master.leader[int(btlReply.Leader)] = true
+				} else {
+					master.leader[i] = true
+				}
+				master.nextLeader = int(btlReply.Leader)
+				log.Printf("Replica %d is the new leader", i)
+				return nil
+			}
+			return err
+		}
+		return errors.New("dead")
+	}
+
 	for {
 		time.Sleep(1000 * 1000 * 1000)
 		new_leader = false
@@ -135,17 +162,14 @@ func (master *Master) run() {
 		if !new_leader {
 			continue
 		}
-		for i, new_master := range master.nodes {
-			if master.alive[i] {
-				err := new_master.Call("Replica.BeTheLeader",
-					new(smr.BeTheLeaderArgs), new(smr.BeTheLeaderReply))
-				if err == nil {
-					master.lock.Lock()
-					master.leader[i] = true
-					master.lock.Unlock()
-					log.Printf("Replica %d is the new leader", i)
-					break
-				}
+		if master.nextLeader != -1 {
+			if beTheLeader(master.nextLeader) == nil {
+				continue
+			}
+		}
+		for i := range master.nodes {
+			if beTheLeader(i) == nil {
+				break
 			}
 		}
 	}
@@ -201,14 +225,10 @@ func (master *Master) Register(args *defs.RegisterArgs, reply *defs.RegisterRepl
 		minLatency := math.MaxFloat64
 		leader := 0
 
-		if master.defaultLeader != -1 {
-			leader = master.defaultLeader
-		} else {
-			for i := 0; i < len(master.leader); i++ {
-				if master.latencies[i] < minLatency {
-					minLatency = master.latencies[i]
-					leader = i
-				}
+		for i := 0; i < len(master.leader); i++ {
+			if master.latencies[i] < minLatency {
+				minLatency = master.latencies[i]
+				leader = i
 			}
 		}
 

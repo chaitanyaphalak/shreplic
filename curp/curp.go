@@ -119,11 +119,11 @@ func NewReplica(rid int, addrs []string, exec, dr bool,
 	r.sender = smr.NewSender(r.Replica)
 	r.qs = smr.NewQuorumSet(r.N/2+1, r.N)
 
-	_, leaderId, err := smr.NewQuorumFromFile(qfile, r.Replica)
-	if err == nil {
-		r.ballot = leaderId
-		r.cballot = leaderId
-		r.isLeader = (leaderId == r.Id)
+	_, leaderIds, err := smr.NewQuorumsFromFile(qfile, r.Replica)
+	if err == nil && len(leaderIds) != 0 {
+		r.ballot = leaderIds[0]
+		r.cballot = leaderIds[0]
+		r.isLeader = (leaderIds[0] == r.Id)
 	} else if err == smr.NO_QUORUM_FILE {
 		r.isLeader = (r.ballot == r.Id)
 	} else {

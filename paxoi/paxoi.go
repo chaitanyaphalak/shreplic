@@ -33,7 +33,7 @@ type Replica struct {
 	historySize int
 
 	AQ smr.Quorum
-	qs smr.QuorumSet
+	qs *smr.QuorumSystem
 	cs CommunicationSupply
 
 	optExec     bool
@@ -44,6 +44,7 @@ type Replica struct {
 	poolLevel    int
 	routineCount int
 
+	recNum        int
 	recover       chan struct{}
 	newLeaderAcks *smr.MsgSet
 
@@ -114,6 +115,7 @@ func NewReplica(rid int, addrs []string, exec, fastRead, dr, optExec bool,
 		poolLevel:    pl,
 		routineCount: 0,
 
+		recNum:  0,
 		recover: make(chan struct{}, 8),
 
 		descPool: sync.Pool{
@@ -130,18 +132,18 @@ func NewReplica(rid int, addrs []string, exec, fastRead, dr, optExec bool,
 	r.sender = smr.NewSender(r.Replica)
 	r.batcher = NewBatcher(r, 16, releaseFastAck, func(_ *MLightSlowAck) {})
 	r.repchan = NewReplyChan(r)
-	r.qs = smr.NewQuorumSet(r.N/2+1, r.N)
 
-	AQ, leaderId, err := smr.NewQuorumFromFile(qfile, r.Replica)
-	if err == nil {
-		r.AQ = AQ
-		r.ballot = leaderId
-		r.cballot = leaderId
-	} else if err == smr.NO_QUORUM_FILE {
-		r.AQ = r.qs.AQ(r.ballot)
-	} else {
+	qs, err := smr.NewQuorumSystem(r.N/2+1, r.Replica, qfile)
+	if err != nil {
 		log.Fatal(err)
 	}
+	r.qs = qs
+	r.ballot = r.qs.BallotAt(0)
+	if r.ballot == -1 {
+		r.ballot = 0
+	}
+	r.cballot = r.ballot
+	r.AQ = r.qs.AQ(r.ballot)
 
 	initCs(&r.cs, r.RPC)
 
@@ -168,10 +170,13 @@ func NewReplica(rid int, addrs []string, exec, fastRead, dr, optExec bool,
 }
 
 // TODO: do something more elegant
-func (r *Replica) BeTheLeader(_ *smr.BeTheLeaderArgs, _ *smr.BeTheLeaderReply) error {
+func (r *Replica) BeTheLeader(_ *smr.BeTheLeaderArgs, reply *smr.BeTheLeaderReply) error {
 	if !r.delivered.IsEmpty() {
 		r.recover <- struct{}{}
+	} else {
+		reply.Leader = r.leader()
 	}
+	reply.NextLeader = smr.Leader(r.qs.BallotAt(r.recNum+1), r.N)
 	return nil
 }
 
@@ -195,13 +200,23 @@ func (r *Replica) run() {
 				Replica: r.Id,
 				Ballot:  r.ballot,
 			}
-			quorumAlive := false
-			for !quorumAlive {
+			newBallot := r.qs.BallotAt(r.recNum + 1)
+			if newBallot != -1 {
+				if newBallot > newLeader.Ballot {
+					newLeader.Ballot = newBallot
+				} else {
+					newLeader.Ballot = r.qs.SameHigher(newBallot, newLeader.Ballot)
+				}
+			} else {
 				newLeader.Ballot = smr.NextBallotOf(r.Id, newLeader.Ballot, r.N)
-				quorumAlive = true
+			}
+			for quorumIsAlive := false; !quorumIsAlive; {
+				quorumIsAlive = true
 				for rid := range r.qs.AQ(newLeader.Ballot) {
-					if rid != r.Id {
-						quorumAlive = r.Alive[rid] && quorumAlive
+					if rid != r.Id && !r.Alive[rid] {
+						newLeader.Ballot = smr.NextBallotOf(r.Id, newLeader.Ballot, r.N)
+						quorumIsAlive = false
+						break
 					}
 				}
 			}

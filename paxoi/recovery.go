@@ -14,6 +14,7 @@ func (r *Replica) handleNewLeader(msg *MNewLeader) {
 		return
 	}
 	log.Println("Recovering...")
+	r.recNum++
 
 	r.status = RECOVERING
 	r.ballot = msg.Ballot
@@ -243,6 +244,9 @@ func (r *Replica) handleSync(msg *MSync) {
 	}()
 
 	log.Println("Recovered!")
+
+	log.Println("Ballot:", r.ballot)
+	log.Println("AQ:", r.AQ)
 }
 
 func (r *Replica) stopDescs() {

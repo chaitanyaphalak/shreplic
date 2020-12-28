@@ -104,12 +104,12 @@ func NewReplica(rid int, addrs []string, exec, dr, optExec bool,
 	r.batcher = NewBatcher(r, 16)
 	r.qs = smr.NewQuorumSet(r.N/2+1, r.N)
 
-	AQ, leaderId, err := smr.NewQuorumFromFile(qfile, r.Replica)
-	if err == nil {
-		r.AQ = AQ
-		r.ballot = leaderId
-		r.cballot = leaderId
-		r.isLeader = (leaderId == r.Id)
+	AQs, leaderIds, err := smr.NewQuorumsFromFile(qfile, r.Replica)
+	if err == nil && len(AQs) != 0 {
+		r.AQ = AQs[0]
+		r.ballot = leaderIds[0]
+		r.cballot = leaderIds[0]
+		r.isLeader = (leaderIds[0] == r.Id)
 	} else if err == smr.NO_QUORUM_FILE {
 		r.AQ = r.qs.AQ(r.ballot)
 		r.isLeader = (r.ballot == r.Id)
