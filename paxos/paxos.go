@@ -17,7 +17,7 @@ const CHAN_BUFFER_SIZE = 200000
 const TRUE = uint8(1)
 const FALSE = uint8(0)
 
-const COMMIT_GRACE_PERIOD = 10 * 1e9 // 10 second(s)
+const COMMIT_GRACE_PERIOD = 3 * 1e9 // 3 second(s)
 const SLEEP_TIME_NS = 1e6
 
 type Replica struct {

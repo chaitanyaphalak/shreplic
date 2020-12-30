@@ -155,16 +155,11 @@ func (c *Client) Connect() error {
 	}
 
 	toConnect := []int{}
-	if c.Fast {
-		for i := 0; i < c.N; i++ {
-			if masterReply.AliveList[i] {
-				toConnect = append(toConnect, i)
-			}
-		}
-	} else {
-		toConnect = append(toConnect, c.ClosestId)
-		if !c.Leaderless && c.ClosestId != c.LeaderId {
-			toConnect = append(toConnect, c.LeaderId)
+	// Connect to all even if !c.Fast
+	// this simplifies the connection to the new leader when the old one is down
+	for i := 0; i < c.N; i++ {
+		if masterReply.AliveList[i] {
+			toConnect = append(toConnect, i)
 		}
 	}
 
@@ -213,6 +208,28 @@ func (c *Client) Disconnect() {
 		}
 	}
 	c.Println("Disconnected")
+}
+
+func (c *Client) Reconnect() error {
+	c.Println("Dialing master...")
+	master, err := c.dialMaster()
+	if err != nil {
+		return err
+	}
+	defer master.Close()
+
+	if !c.Leaderless {
+		c.Println("Getting leader from master...")
+		gl, err := askMaster(master, "GetLeader", c.Logger)
+		if err != nil {
+			return err
+		}
+		masterReply := gl.(*defs.GetLeaderReply)
+		c.LeaderId = masterReply.LeaderId
+		c.Println("The leader is replicas", c.LeaderId)
+	}
+
+	return nil
 }
 
 func (c *Client) Write(key int64, value []byte) {

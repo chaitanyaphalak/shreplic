@@ -153,7 +153,7 @@ func (master *Master) run() {
 	}
 
 	for {
-		time.Sleep(1000 * 1000 * 1000)
+		time.Sleep(1000 * 1000 * 1000 * 3)
 		new_leader = false
 		for i, node := range master.nodes {
 			pingNode(i, node)

@@ -114,15 +114,28 @@ func (c *SimpleClient) Scan(key, count int64) []byte {
 }
 
 func (c *SimpleClient) Run() error {
+	return c.run(true)
+}
+
+func (c *SimpleClient) Rerun() error {
+	return c.run(false)
+}
+
+func (c *SimpleClient) run(connect bool) error {
 	for try := 0; ; try++ {
-		err := c.Connect()
+		var err error
+		if connect {
+			err = c.Connect()
+		} else {
+			err = c.Reconnect()
+		}
 		if err == nil {
 			break
 		}
-		c.Disconnect()
 		if try > 3 {
 			return err
 		}
+		c.Disconnect()
 	}
 	c.Println("Client", c.ClientId, "is up")
 
@@ -169,7 +182,6 @@ func (c *SimpleClient) Run() error {
 				err = c.waitReplies(c.LastSubmitter, c.Seqnum)
 			}
 			if err != nil {
-				c.Disconnect()
 				return err
 			}
 		}

@@ -115,26 +115,27 @@ func (r *Replica) handleShareState(msg *MShareState) {
 	cmds := make(map[CommandId]state.Command)
 	deps := make(map[CommandId]Dep)
 
-	for slot, sDesc := range r.history {
+	/*for slot, sDesc := range r.history {
 		if slot >= r.historySize {
 			break
 		}
 		if sDesc.defered != nil {
 			sDesc.defered()
 		}
-	}
+	}*/
 	r.cmdDescs.IterCb(func(_ string, v interface{}) {
 		v.(*commandDesc).defered()
 	})
 
-	for slot, sDesc := range r.history {
+	/*for slot, sDesc := range r.history {
 		if slot >= r.historySize {
 			break
 		}
 		phases[sDesc.cmdId] = sDesc.phase
 		cmds[sDesc.cmdId] = sDesc.cmd
 		deps[sDesc.cmdId] = sDesc.dep
-	}
+	}*/
+	// TODO: add in an order consistent with dep
 	r.cmdDescs.IterCb(func(_ string, v interface{}) {
 		desc := v.(*commandDesc)
 		if desc.propose != nil {

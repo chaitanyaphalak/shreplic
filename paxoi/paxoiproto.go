@@ -97,6 +97,15 @@ type MSync struct {
 	Deps    map[CommandId]Dep
 }
 
+type MOptSync struct {
+	Replica int32
+	Ballot  int32
+	Ids     []CommandId
+	Phases  []int
+	Cmds    []state.Command
+	Deps    []Dep
+}
+
 type MCollect struct {
 	Replica int32
 	CmdId   CommandId

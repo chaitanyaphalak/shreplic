@@ -7,6 +7,8 @@ import (
 	"os"
 	"strconv"
 	"sync"
+	"io"
+	"time"
 
 	"github.com/vonaka/shreplic/client/base"
 	"github.com/vonaka/shreplic/curp"
@@ -80,8 +82,14 @@ func runSimpleClient(i int) {
 		c := base.NewSimpleClient(*maddr, *collocatedWith, *mport, *reqNum,
 			*writes, *psize, *conflicts, *fast, *lread, *noLeader, *verbose, l)
 		err := c.Run()
-		if err != nil {
-			fmt.Println(err)
+		for err != nil {
+			if err == io.EOF {
+				time.Sleep(time.Second)
+				err = c.Rerun()
+			} else {
+				fmt.Println(err)
+				return
+			}
 		}
 	}
 }
