@@ -3,11 +3,11 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"strconv"
 	"sync"
-	"io"
 	"time"
 
 	"github.com/vonaka/shreplic/client/base"

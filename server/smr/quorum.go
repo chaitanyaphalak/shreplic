@@ -6,7 +6,6 @@ import (
 	"os"
 	"sort"
 	"strings"
-
 	//"strconv"
 )
 
@@ -189,7 +188,7 @@ func NewQuorumsFromFile(qfile string, r *Replica) ([]Quorum, []int32, error) {
 			//i, _ := strconv.Atoi(addr)
 			//if int32(i) == rid {
 			paddr := strings.Split(r.PeerAddrList[rid], ":")[0]
-				if addr == paddr {
+			if addr == paddr {
 				id = rid
 				break
 			}
