@@ -138,13 +138,13 @@ func (master *Master) run() {
 			err := master.nodes[i].Call("Replica.BeTheLeader",
 				new(smr.BeTheLeaderArgs), btlReply)
 			if err == nil {
+				leaderI := i
 				if btlReply.Leader != -1 {
-					master.leader[int(btlReply.Leader)] = true
-				} else {
-					master.leader[i] = true
+					leaderI = int(btlReply.Leader)
 				}
+				master.leader[leaderI] = true
 				master.nextLeader = int(btlReply.Leader)
-				log.Printf("Replica %d is the new leader", i)
+				log.Printf("Replica %d is the new leader", leaderI)
 				return nil
 			}
 			return err

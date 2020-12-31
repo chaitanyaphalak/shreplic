@@ -20,6 +20,10 @@ func (r *Replica) handleNewLeader(msg *MNewLeader) {
 	r.ballot = msg.Ballot
 
 	r.stopDescs()
+	r.historyStart = r.gc.Stop()
+	if !r.AQ.Contains(r.Id) {
+		r.historyStart = r.historySize
+	}
 
 	newLeaderAck := &MNewLeaderAck{
 		Replica: r.Id,
@@ -127,6 +131,16 @@ func (r *Replica) handleShareState(msg *MShareState) {
 		v.(*commandDesc).defered()
 	})
 
+	for slot := r.historyStart; slot < r.historySize; slot++ {
+		_, exists := r.gc.pending[slot]
+		if exists {
+			continue
+		}
+		sDesc := r.history[slot]
+		phases[sDesc.cmdId] = sDesc.phase
+		cmds[sDesc.cmdId] = sDesc.cmd
+		deps[sDesc.cmdId] = sDesc.dep
+	}
 	/*for slot, sDesc := range r.history {
 		if slot >= r.historySize {
 			break
@@ -165,10 +179,15 @@ func (r *Replica) handleSync(msg *MSync) {
 		return
 	}
 
+	if r.status == NORMAL {
+		r.gc.Stop()
+	}
+
 	r.status = NORMAL
 	r.ballot = msg.Ballot
 	r.cballot = msg.Ballot
 	r.AQ = r.qs.AQ(r.ballot)
+	r.gc = NewGc(r)
 
 	r.stopDescs()
 	// clear cmdDescs:

@@ -12,7 +12,7 @@ const (
 
 type SendType int32
 
-const ARGS_NUM int = CHAN_BUFFER_SIZE
+const ARGS_NUM = CHAN_BUFFER_SIZE
 
 type SendArg struct {
 	msg      fastrpc.Serializable

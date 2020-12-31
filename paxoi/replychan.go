@@ -50,6 +50,7 @@ func NewReplyChan(r *Replica) *replyChan {
 				}
 				r.historySize = (r.historySize % HISTORY_SIZE) + 1
 				args.finish <- (r.historySize - 1)
+				r.gc.Prepare(r, args.cmdId)
 
 			case args := <-rc.readArgs:
 				reply := &MReadReply{

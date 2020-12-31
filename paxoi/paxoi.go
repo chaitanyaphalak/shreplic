@@ -23,14 +23,16 @@ type Replica struct {
 	cmdDescs  cmap.ConcurrentMap
 	delivered cmap.ConcurrentMap
 
+	gc      *gc
 	sender  smr.Sender
 	batcher *Batcher
 	repchan *replyChan
 
-	keys        map[state.Key]keyInfo
-	reads       map[CommandId]*readDesc
-	history     []commandStaticDesc
-	historySize int
+	keys         map[state.Key]keyInfo
+	reads        map[CommandId]*readDesc
+	history      []commandStaticDesc
+	historySize  int
+	historyStart int
 
 	AQ smr.Quorum
 	qs *smr.QuorumSystem
@@ -103,10 +105,11 @@ func NewReplica(rid int, addrs []string, exec, fastRead, dr, optExec bool,
 		cmdDescs:  cmap.New(),
 		delivered: cmap.New(),
 
-		keys:        make(map[state.Key]keyInfo),
-		reads:       make(map[CommandId]*readDesc),
-		history:     make([]commandStaticDesc, HISTORY_SIZE),
-		historySize: 0,
+		keys:         make(map[state.Key]keyInfo),
+		reads:        make(map[CommandId]*readDesc),
+		history:      make([]commandStaticDesc, HISTORY_SIZE),
+		historySize:  0,
+		historyStart: 0,
 
 		optExec:     optExec,
 		fastRead:    fastRead,
@@ -144,6 +147,7 @@ func NewReplica(rid int, addrs []string, exec, fastRead, dr, optExec bool,
 	}
 	r.cballot = r.ballot
 	r.AQ = r.qs.AQ(r.ballot)
+	r.gc = NewGc(r)
 
 	initCs(&r.cs, r.RPC)
 
@@ -301,7 +305,7 @@ func (r *Replica) run() {
 
 		case m := <-r.cs.collectChan:
 			collect := m.(*MCollect)
-			r.handleCollect(collect)
+			go r.handleCollect(collect)
 		}
 	}
 }
@@ -508,7 +512,11 @@ func (r *Replica) handleFlush(msg *MFlush) {
 }
 
 func (r *Replica) handleCollect(msg *MCollect) {
+	if r.status != NORMAL || r.ballot != msg.Ballot {
+		return
+	}
 
+	r.gc.CollectAll(msg.Ids)
 }
 
 func (r *Replica) deliver(desc *commandDesc, cmdId CommandId) {
@@ -751,6 +759,7 @@ func (r *Replica) handleMsg(m interface{}, desc *commandDesc, cmdId CommandId) b
 		desc.fastAndSlowAcks.Free()
 		r.cmdDescs.Remove(cmdId.String())
 		r.freeDesc(desc)
+		r.gc.Record(cmdId, msg)
 		return true
 	}
 
