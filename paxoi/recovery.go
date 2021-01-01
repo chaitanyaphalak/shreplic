@@ -163,6 +163,8 @@ func (r *Replica) handleShareState(msg *MShareState) {
 		}
 	})
 
+	log.Println("totalSendNum:", len(cmds))
+
 	sync := &MSync{
 		Replica: r.Id,
 		Ballot:  r.ballot,

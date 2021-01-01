@@ -46,6 +46,9 @@ type Replica struct {
 	flush                 bool
 	executedUpTo          int32
 	batchWait             int
+
+	totalRecNum  int
+	totalSendNum int
 }
 
 type InstanceStatus int
@@ -95,7 +98,7 @@ func NewReplica(id int, peerAddrList []string, Isleader bool, thrifty bool, exec
 		0,
 		true,
 		-1,
-		batchWait}
+		batchWait, 0, 0}
 
 	r.Durable = durable
 
@@ -158,6 +161,8 @@ func (r *Replica) sync() {
 
 func (r *Replica) BeTheLeader(args *smr.BeTheLeaderArgs, reply *smr.BeTheLeaderReply) error {
 	r.IsLeader = true
+	r.totalRecNum = 0
+	r.totalSendNum = 0
 	log.Println("I am the leader")
 	return nil
 }
@@ -617,6 +622,15 @@ func (r *Replica) handlePrepareReply(preply *PrepareReply) {
 		r.defaultBallot[preply.AcceptorId] = preply.DefaultBallot
 	}
 
+	if lb.prepareOKs < r.Replica.ReadQuorumSize() && len(preply.Command) != 0 {
+		r.totalRecNum += len(preply.Command)
+		log.Println("totalRecNum:", r.totalRecNum)
+	}
+
+	// TODO: In the following we update lb.cmds,
+	// ignoring `lb.cmds = preply.Command` executed
+	// previously. This is strange
+
 	if lb.prepareOKs+1 >= r.Replica.ReadQuorumSize() {
 		if lb.clientProposals != nil {
 			dlog.Printf("Pushing client proposals")
@@ -650,8 +664,11 @@ func (r *Replica) handlePrepareReply(preply *PrepareReply) {
 		r.recordInstanceMetadata(r.instanceSpace[preply.Instance])
 		r.sync()
 		r.bcastAccept(preply.Instance)
+		if len(inst.cmds) != 0 {
+			r.totalSendNum += len(inst.cmds)
+			log.Println("totalSendNum:", r.totalSendNum)
+		}
 	}
-
 }
 
 func (r *Replica) handleAcceptReply(areply *AcceptReply) {
