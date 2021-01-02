@@ -7,7 +7,7 @@ import (
 	"github.com/vonaka/shreplic/server/smr"
 )
 
-const COLLECT_SIZE = 1000
+const COLLECT_SIZE = 100
 
 type gc struct {
 	trash  chan int
@@ -64,6 +64,7 @@ func NewGc(r *Replica) *gc {
 			g.wg.Done()
 		}()
 	} else {
+		g.mcollect.Ballot = r.ballot
 		g.mcollect.Replica = r.Id
 		g.mcollect.Ids = make([]CommandId, COLLECT_SIZE)
 	}
@@ -91,7 +92,7 @@ func (g *gc) Record(cmdId CommandId, slot int) {
 		historyIndex: slot,
 	}
 
-	g.slots.Upsert(cmdId.String(), cmdSlot,
+	g.slots.Upsert(cmdId.String(), nil,
 		func(exists bool, mapV, _ interface{}) interface{} {
 			if !exists {
 				if cmdSlot.ackNum == g.ackNum {
