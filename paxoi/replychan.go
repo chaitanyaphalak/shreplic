@@ -36,7 +36,6 @@ func NewReplyChan(r *Replica) *replyChan {
 					rc.rep.CommandId = args.propose.CommandId
 					rc.rep.Value = args.val
 					rc.rep.Timestamp = args.propose.Timestamp
-
 					r.ReplyProposeTS(rc.rep, args.propose.Reply, args.propose.Mutex)
 				} else if r.optExec && r.Id == r.leader() {
 					reply := &MReply{

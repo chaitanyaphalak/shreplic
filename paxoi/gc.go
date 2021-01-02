@@ -7,7 +7,7 @@ import (
 	"github.com/vonaka/shreplic/server/smr"
 )
 
-const COLLECT_SIZE = 100
+const COLLECT_SIZE = 2000
 
 type gc struct {
 	trash  chan int
@@ -114,11 +114,16 @@ func (g *gc) Record(cmdId CommandId, slot int) {
 
 func (g *gc) Prepare(r *Replica, cmdId CommandId) {
 	if !g.active {
+		g.wg.Wait()
+		g.mcollect.Ballot = r.ballot
 		g.mcollect.Ids[g.next] = cmdId
 		g.next++
 		if g.next == len(g.mcollect.Ids) {
 			g.next = 0
-			r.sender.SendToQuorum(r.AQ, &g.mcollect, r.cs.collectRPC)
+			g.wg.Add(1)
+			r.sender.SendToQuorumAndFree(r.AQ, &g.mcollect, r.cs.collectRPC, func() {
+				g.wg.Done()
+			})
 		}
 	}
 }
@@ -126,7 +131,7 @@ func (g *gc) Prepare(r *Replica, cmdId CommandId) {
 func (g *gc) Stop() int {
 	if g.active {
 		g.trash <- -42
-		g.wg.Wait()
 	}
+	g.wg.Wait()
 	return g.historyStart
 }

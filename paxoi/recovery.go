@@ -87,6 +87,11 @@ func (r *Replica) handleNewLeaderAcks(_ interface{}, msgs []interface{}) {
 		Ballot:  r.ballot,
 	}
 
+	if maxCbal == r.cballot && mAQ.Contains(r.Id) {
+		r.handleShareState(shareState)
+		return
+	}
+
 	for newLeaderAck := range U {
 		if mAQ.Contains(newLeaderAck.Replica) {
 			if newLeaderAck.Replica != r.Id {
@@ -98,13 +103,12 @@ func (r *Replica) handleNewLeaderAcks(_ interface{}, msgs []interface{}) {
 		}
 	}
 
-	if maxCbal == r.cballot {
-		r.handleShareState(shareState)
-		return
-	}
-
 	for newLeaderAck := range U {
-		r.sender.SendTo(newLeaderAck.Replica, shareState, r.cs.shareStateRPC)
+		if newLeaderAck.Replica != r.Id {
+			r.sender.SendTo(newLeaderAck.Replica, shareState, r.cs.shareStateRPC)
+		} else {
+			r.handleShareState(shareState)
+		}
 	}
 }
 
@@ -132,10 +136,10 @@ func (r *Replica) handleShareState(msg *MShareState) {
 	})
 
 	for slot := r.historyStart; slot < r.historySize; slot++ {
-		_, exists := r.gc.pending[slot]
-		if exists {
-			continue
-		}
+		//_, exists := r.gc.pending[slot]
+		//if exists {
+		//	continue
+		//}
 		sDesc := r.history[slot]
 		phases[sDesc.cmdId] = sDesc.phase
 		cmds[sDesc.cmdId] = sDesc.cmd
