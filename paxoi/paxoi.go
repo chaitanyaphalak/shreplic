@@ -46,6 +46,7 @@ type Replica struct {
 	poolLevel    int
 	routineCount int
 
+	dl            *DelayLog
 	recNum        int
 	recover       chan struct{}
 	newLeaderAcks *smr.MsgSet
@@ -148,6 +149,7 @@ func NewReplica(rid int, addrs []string, exec, fastRead, dr, optExec bool,
 	r.cballot = r.ballot
 	r.AQ = r.qs.AQ(r.ballot)
 	r.gc = NewGc(r)
+	r.dl = NewDelayLog(r.N)
 
 	initCs(&r.cs, r.RPC)
 
