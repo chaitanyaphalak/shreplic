@@ -48,7 +48,7 @@ type Replica struct {
 
 	dl            *DelayLog
 	recNum        int
-	recover       chan struct{}
+	recover       chan int32
 	newLeaderAcks *smr.MsgSet
 
 	// TODO: get rid of this
@@ -120,7 +120,7 @@ func NewReplica(rid int, addrs []string, exec, fastRead, dr, optExec bool,
 		routineCount: 0,
 
 		recNum:  0,
-		recover: make(chan struct{}, 8),
+		recover: make(chan int32, 8),
 
 		descPool: sync.Pool{
 			New: func() interface{} {
@@ -149,7 +149,7 @@ func NewReplica(rid int, addrs []string, exec, fastRead, dr, optExec bool,
 	r.cballot = r.ballot
 	r.AQ = r.qs.AQ(r.ballot)
 	r.gc = NewGc(r)
-	r.dl = NewDelayLog(r.N)
+	r.dl = NewDelayLog(r)
 
 	initCs(&r.cs, r.RPC)
 
@@ -178,7 +178,7 @@ func NewReplica(rid int, addrs []string, exec, fastRead, dr, optExec bool,
 // TODO: do something more elegant
 func (r *Replica) BeTheLeader(_ *smr.BeTheLeaderArgs, reply *smr.BeTheLeaderReply) error {
 	if !r.delivered.IsEmpty() {
-		r.recover <- struct{}{}
+		r.recover <- r.qs.BallotAt(r.recNum + 1)
 	} else {
 		reply.Leader = r.leader()
 	}
@@ -201,12 +201,24 @@ func (r *Replica) run() {
 	var cmdId CommandId
 	for !r.Shutdown {
 		select {
-		case <-r.recover:
+		case swap := <-r.dl.swap:
+			if r.leader() != r.Id {
+				continue
+			}
+			newAQ := smr.NewQuorum(r.AQ.Size())
+			for rid := range r.AQ {
+				if rid == swap.oldFast {
+					newAQ[swap.newFast] = struct{}{}
+				} else {
+					newAQ[rid] = struct{}{}
+				}
+			}
+			r.recover <- r.qs.BallotOf(r.Id, newAQ)
+		case newBallot := <-r.recover:
 			newLeader := &MNewLeader{
 				Replica: r.Id,
 				Ballot:  r.ballot,
 			}
-			newBallot := r.qs.BallotAt(r.recNum + 1)
 			if newBallot != -1 {
 				if newBallot > newLeader.Ballot {
 					newLeader.Ballot = newBallot
@@ -258,23 +270,28 @@ func (r *Replica) run() {
 
 		case m := <-r.cs.fastAckChan:
 			fastAck := m.(*MFastAck)
+			r.dl.BTick(fastAck.Ballot, fastAck.Replica, true)
 			r.getCmdDesc(fastAck.CmdId, fastAck, nil)
 
 		case m := <-r.cs.slowAckChan:
 			slowAck := m.(*MSlowAck)
+			r.dl.BTick(slowAck.Ballot, slowAck.Replica, true)
 			r.getCmdDesc(slowAck.CmdId, slowAck, nil)
 
 		case m := <-r.cs.lightSlowAckChan:
 			lightSlowAck := m.(*MLightSlowAck)
+			r.dl.BTick(lightSlowAck.Ballot, lightSlowAck.Replica, true)
 			r.getCmdDesc(lightSlowAck.CmdId, lightSlowAck, nil)
 
 		case m := <-r.cs.acksChan:
 			acks := m.(*MAcks)
 			for _, f := range acks.FastAcks {
+				r.dl.BTick(f.Ballot, f.Replica, true)
 				r.getCmdDesc(f.CmdId, copyFastAck(&f), nil)
 			}
 			for _, s := range acks.LightSlowAcks {
 				ls := s
+				r.dl.BTick(ls.Ballot, ls.Replica, true)
 				r.getCmdDesc(s.CmdId, &ls, nil)
 			}
 
@@ -290,6 +307,7 @@ func (r *Replica) run() {
 				} else {
 					fastAck.Dep = nil
 				}
+				r.dl.BTick(optAcks.Ballot, optAcks.Replica, true)
 				r.getCmdDesc(fastAck.CmdId, fastAck, nil)
 			}
 
@@ -307,6 +325,7 @@ func (r *Replica) run() {
 
 		case m := <-r.cs.collectChan:
 			collect := m.(*MCollect)
+			r.dl.BTick(collect.Ballot, collect.Replica, false)
 			go r.handleCollect(collect)
 		}
 	}

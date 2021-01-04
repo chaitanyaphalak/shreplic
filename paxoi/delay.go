@@ -15,19 +15,25 @@ type DelayEntry struct {
 }
 
 type SwapValue struct {
-	newFast int32
 	oldFast int32
+	newFast int32
 }
 
 type DelayLog struct {
+	id            int32
 	log           []DelayEntry
+	swap          chan SwapValue
+	ballot        int32
 	fastestSlowD  time.Duration
 	fastestSlowId int32
 }
 
-func NewDelayLog(repNum int) *DelayLog {
+func NewDelayLog(r *Replica) *DelayLog {
 	dl := &DelayLog{
-		log:           make([]DelayEntry, repNum),
+		id:            r.Id,
+		log:           make([]DelayEntry, r.N),
+		swap:          make(chan SwapValue, 4),
+		ballot:        r.ballot,
 		fastestSlowId: -1,
 	}
 	for i := range dl.log {
@@ -54,12 +60,24 @@ func (dl *DelayLog) Tick(id int32, fast bool) int32 {
 		dl.log[i].badCount--
 	}
 
-	if fast && dl.log[i].badCount > BAD_CONT &&
-		dl.fastestSlowD < d && dl.fastestSlowId != -1 {
+	if fast && dl.log[i].badCount > BAD_CONT && dl.fastestSlowId != -1 {
 		return dl.fastestSlowId
 	}
 	if !fast && (d < dl.fastestSlowD || dl.fastestSlowId == -1) {
 		dl.fastestSlowId = id
 	}
 	return id
+}
+
+func (dl *DelayLog) BTick(ballot, id int32, fast bool) {
+	if dl.id == id || dl.ballot != ballot {
+		return
+	}
+	nid := dl.Tick(id, fast)
+	if nid != id {
+		dl.swap <- SwapValue{
+			oldFast: id,
+			newFast: nid,
+		}
+	}
 }

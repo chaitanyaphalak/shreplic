@@ -6,7 +6,6 @@ import (
 	"os"
 	"sort"
 	"strings"
-	//"strconv"
 )
 
 type QuorumI interface {
@@ -146,6 +145,10 @@ func (sys *QuorumSystem) BallotAt(i int) int32 {
 	return -1
 }
 
+func (sys *QuorumSystem) BallotOf(leader int32, q Quorum) int32 {
+	return sys.qs.BallotOf(leader, q)
+}
+
 func (sys QuorumSystem) AQ(ballot int32) Quorum {
 	return sys.qs.AQ(ballot)
 }
@@ -185,8 +188,6 @@ func NewQuorumsFromFile(qfile string, r *Replica) ([]Quorum, []int32, error) {
 		}
 
 		for rid := int32(0); rid < int32(r.N); rid++ {
-			//i, _ := strconv.Atoi(addr)
-			//if int32(i) == rid {
 			paddr := strings.Split(r.PeerAddrList[rid], ":")[0]
 			if addr == paddr {
 				id = rid
@@ -231,6 +232,15 @@ func (qs QuorumSet) AQ(ballot int32) Quorum {
 	lqs := qs[l]
 	qid := (ballot / int32(len(qs))) % int32(len(lqs))
 	return lqs[qid]
+}
+
+func (qs QuorumSet) BallotOf(leader int32, q Quorum) int32 {
+	for qid, qj := range qs[leader] {
+		if qj.Equals(q) {
+			return qid * int32(len(qs))
+		}
+	}
+	return -1
 }
 
 func subsets(ids []int32, repNum, quorumSize, i int, q Quorum,
