@@ -49,6 +49,7 @@ type Replica struct {
 	dl            *DelayLog
 	recNum        int
 	recover       chan int32
+	recStart      time.Time
 	newLeaderAcks *smr.MsgSet
 
 	// TODO: get rid of this

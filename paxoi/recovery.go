@@ -3,6 +3,7 @@ package paxoi
 import (
 	"log"
 	"sync"
+	"time"
 
 	"github.com/orcaman/concurrent-map"
 	"github.com/vonaka/shreplic/server/smr"
@@ -18,6 +19,7 @@ func (r *Replica) handleNewLeader(msg *MNewLeader) {
 
 	r.status = RECOVERING
 	r.ballot = msg.Ballot
+	r.recStart = time.Now()
 
 	r.stopDescs()
 	r.historyStart = r.gc.Stop()
@@ -187,6 +189,7 @@ func (r *Replica) handleSync(msg *MSync) {
 
 	if r.status == NORMAL {
 		r.gc.Stop()
+		r.recStart = time.Now()
 	}
 
 	r.status = NORMAL
@@ -194,6 +197,7 @@ func (r *Replica) handleSync(msg *MSync) {
 	r.cballot = msg.Ballot
 	r.AQ = r.qs.AQ(r.ballot)
 	r.gc = NewGc(r)
+	r.dl = NewDelayLog(r)
 
 	r.stopDescs()
 	// clear cmdDescs:
@@ -270,9 +274,9 @@ func (r *Replica) handleSync(msg *MSync) {
 	}()
 
 	log.Println("Recovered!")
-
 	log.Println("Ballot:", r.ballot)
 	log.Println("AQ:", r.AQ)
+	log.Println("recovered in", time.Now().Sub(r.recStart))
 }
 
 func (r *Replica) stopDescs() {
