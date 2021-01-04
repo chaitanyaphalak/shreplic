@@ -197,7 +197,9 @@ func (r *Replica) handleSync(msg *MSync) {
 	r.cballot = msg.Ballot
 	r.AQ = r.qs.AQ(r.ballot)
 	r.gc = NewGc(r)
+	lv := r.dl.lastValue
 	r.dl = NewDelayLog(r)
+	r.dl.lastValue = lv
 
 	r.stopDescs()
 	// clear cmdDescs:

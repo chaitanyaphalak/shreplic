@@ -5,7 +5,7 @@ import (
 )
 
 const (
-	BAD_CONT  = 4
+	BAD_CONT  = 3
 	THRESHOLD = time.Duration(500 * time.Millisecond)
 )
 
@@ -24,6 +24,7 @@ type DelayLog struct {
 	log           []DelayEntry
 	swap          chan SwapValue
 	ballot        int32
+	lastValue     SwapValue
 	fastestSlowD  time.Duration
 	fastestSlowId int32
 }
@@ -34,6 +35,7 @@ func NewDelayLog(r *Replica) *DelayLog {
 		log:           make([]DelayEntry, r.N),
 		swap:          make(chan SwapValue, 4),
 		ballot:        r.ballot,
+		lastValue:     SwapValue{oldFast: -1, newFast: -1},
 		fastestSlowId: -1,
 	}
 	for i := range dl.log {
@@ -60,8 +62,13 @@ func (dl *DelayLog) Tick(id int32, fast bool) int32 {
 		dl.log[i].badCount--
 	}
 
-	if fast && dl.log[i].badCount > BAD_CONT && dl.fastestSlowId != -1 {
-		return dl.fastestSlowId
+	if fast {
+		if dl.log[i].badCount == BAD_CONT && dl.fastestSlowId != -1 {
+			return dl.fastestSlowId
+		}
+		if dl.lastValue.newFast == id && dl.log[dl.lastValue.oldFast].badCount == 0 {
+			return dl.lastValue.oldFast
+		}
 	}
 	if !fast && (d < dl.fastestSlowD || dl.fastestSlowId == -1) {
 		dl.fastestSlowId = id
@@ -75,9 +82,10 @@ func (dl *DelayLog) BTick(ballot, id int32, fast bool) {
 	}
 	nid := dl.Tick(id, fast)
 	if nid != id {
-		dl.swap <- SwapValue{
+		dl.lastValue = SwapValue{
 			oldFast: id,
 			newFast: nid,
 		}
+		dl.swap <- dl.lastValue
 	}
 }
