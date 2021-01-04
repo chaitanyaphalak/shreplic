@@ -206,6 +206,7 @@ func (r *Replica) run() {
 			if r.leader() != r.Id {
 				continue
 			}
+			fmt.Println("swap replicas", swap.oldFast, "and", swap.newFast)
 			newAQ := smr.NewQuorum(r.AQ.Size())
 			for rid := range r.AQ {
 				if rid == swap.oldFast {

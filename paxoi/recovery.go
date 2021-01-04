@@ -192,14 +192,17 @@ func (r *Replica) handleSync(msg *MSync) {
 		r.recStart = time.Now()
 	}
 
+	r.historySize = 0
 	r.status = NORMAL
 	r.ballot = msg.Ballot
 	r.cballot = msg.Ballot
 	r.AQ = r.qs.AQ(r.ballot)
 	r.gc = NewGc(r)
-	lv := r.dl.lastValue
-	r.dl = NewDelayLog(r)
-	r.dl.lastValue = lv
+	if r.recNum % 2 == 1 {
+		r.dl.Reinit(r)
+	} else {
+		r.dl = NewDelayLog(r)
+	}
 
 	r.stopDescs()
 	// clear cmdDescs:

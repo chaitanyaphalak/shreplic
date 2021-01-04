@@ -1,8 +1,6 @@
 package paxoi
 
-import (
-	"time"
-)
+import "time"
 
 const (
 	BAD_CONT  = 3
@@ -33,7 +31,7 @@ func NewDelayLog(r *Replica) *DelayLog {
 	dl := &DelayLog{
 		id:            r.Id,
 		log:           make([]DelayEntry, r.N),
-		swap:          make(chan SwapValue, 4),
+		swap:          make(chan SwapValue, 1),
 		ballot:        r.ballot,
 		lastValue:     SwapValue{oldFast: -1, newFast: -1},
 		fastestSlowId: -1,
@@ -42,6 +40,12 @@ func NewDelayLog(r *Replica) *DelayLog {
 		dl.log[i].badCount = -1
 	}
 	return dl
+}
+
+func (dl *DelayLog) Reinit(r *Replica) {
+	dl.swap = make(chan SwapValue, 1)
+	dl.ballot = r.ballot
+	dl.fastestSlowId = -1
 }
 
 func (dl *DelayLog) Tick(id int32, fast bool) int32 {
