@@ -4,7 +4,8 @@ import "time"
 
 const (
 	BAD_CONT  = 3
-	THRESHOLD = time.Duration(500 * time.Millisecond)
+	THRESHOLD = time.Duration(210 * time.Millisecond)
+	PING_DELAY = time.Duration(10 * time.Millisecond)
 )
 
 type DelayEntry struct {
@@ -21,6 +22,7 @@ type DelayLog struct {
 	id            int32
 	log           []DelayEntry
 	swap          chan SwapValue
+	ping          MPing
 	ballot        int32
 	lastValue     SwapValue
 	fastestSlowD  time.Duration
@@ -31,7 +33,8 @@ func NewDelayLog(r *Replica) *DelayLog {
 	dl := &DelayLog{
 		id:            r.Id,
 		log:           make([]DelayEntry, r.N),
-		swap:          make(chan SwapValue, 1),
+		swap:          make(chan SwapValue, 2),
+		ping:          MPing{Replica: r.Id, Ballot: r.ballot},
 		ballot:        r.ballot,
 		lastValue:     SwapValue{oldFast: -1, newFast: -1},
 		fastestSlowId: -1,
@@ -43,9 +46,11 @@ func NewDelayLog(r *Replica) *DelayLog {
 }
 
 func (dl *DelayLog) Reinit(r *Replica) {
-	dl.swap = make(chan SwapValue, 1)
+	dl.swap = make(chan SwapValue, 2)
 	dl.ballot = r.ballot
 	dl.fastestSlowId = -1
+	dl.ping.Ballot = r.ballot
+	r.sender.SendToAll(&dl.ping, r.cs.pingRPC)
 }
 
 func (dl *DelayLog) Tick(id int32, fast bool) int32 {
@@ -60,7 +65,8 @@ func (dl *DelayLog) Tick(id int32, fast bool) int32 {
 	now := time.Now()
 	d := now.Sub(dl.log[i].now)
 	dl.log[i].now = now
-	if d > THRESHOLD {
+
+	if d > THRESHOLD + PING_DELAY {
 		dl.log[i].badCount++
 	} else if dl.log[i].badCount > 0 {
 		dl.log[i].badCount--

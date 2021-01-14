@@ -2,6 +2,7 @@ package paxoi
 
 import (
 	"log"
+	"sort"
 	"sync"
 	"time"
 
@@ -21,6 +22,7 @@ func (r *Replica) handleNewLeader(msg *MNewLeader) {
 	r.ballot = msg.Ballot
 	r.recStart = time.Now()
 
+	r.repchan.stop()
 	r.stopDescs()
 	r.historyStart = r.gc.Stop()
 	if !r.AQ.Contains(r.Id) {
@@ -125,14 +127,14 @@ func (r *Replica) handleShareState(msg *MShareState) {
 	cmds := make(map[CommandId]state.Command)
 	deps := make(map[CommandId]Dep)
 
-	/*for slot, sDesc := range r.history {
+	for slot, sDesc := range r.history {
 		if slot >= r.historySize {
 			break
 		}
 		if sDesc.defered != nil {
 			sDesc.defered()
 		}
-	}*/
+	}
 	r.cmdDescs.IterCb(func(_ string, v interface{}) {
 		v.(*commandDesc).defered()
 	})
@@ -147,15 +149,7 @@ func (r *Replica) handleShareState(msg *MShareState) {
 		cmds[sDesc.cmdId] = sDesc.cmd
 		deps[sDesc.cmdId] = sDesc.dep
 	}
-	/*for slot, sDesc := range r.history {
-		if slot >= r.historySize {
-			break
-		}
-		phases[sDesc.cmdId] = sDesc.phase
-		cmds[sDesc.cmdId] = sDesc.cmd
-		deps[sDesc.cmdId] = sDesc.dep
-	}*/
-	// TODO: add in an order consistent with dep
+
 	r.cmdDescs.IterCb(func(_ string, v interface{}) {
 		desc := v.(*commandDesc)
 		if desc.propose != nil {
@@ -163,11 +157,22 @@ func (r *Replica) handleShareState(msg *MShareState) {
 				ClientId: desc.propose.ClientId,
 				SeqNum:   desc.propose.CommandId,
 			}
-			phases[cmdId] = desc.phase
-			cmds[cmdId] = desc.cmd
-			deps[cmdId] = desc.dep
+			if _, exists := phases[cmdId]; !exists {
+				phases[cmdId] = desc.phase
+				cmds[cmdId] = desc.cmd
+				deps[cmdId] = desc.dep
+			}
 		}
 	})
+
+	for cmdId, _ := range r.proposes {
+		if _, exists := phases[cmdId]; exists || r.delivered.Has(cmdId.String()) {
+			continue
+		}
+		phases[cmdId] = ACCEPT
+		cmds[cmdId] = state.NOOP()[0]
+		deps[cmdId] = []CommandId{}
+	}
 
 	log.Println("totalSendNum:", len(cmds), r.historyStart)
 
@@ -188,95 +193,138 @@ func (r *Replica) handleSync(msg *MSync) {
 	}
 
 	if r.status == NORMAL {
-		r.gc.Stop()
 		r.recStart = time.Now()
+		r.repchan.stop()
+		r.stopDescs()
+		r.gc.Stop()
 	}
 
-	r.historySize = 0
+	// clear cmdDescs:
+	r.cmdDescs.IterCb(func(_ string, v interface{}) {
+		desc := v.(*commandDesc)
+		if desc.propose != nil {
+			cmdId := CommandId{
+				ClientId: desc.propose.ClientId,
+				SeqNum:   desc.propose.CommandId,
+			}
+			if _, exists := msg.Phases[cmdId]; !exists {
+				go func(propose *smr.GPropose) {
+					r.ProposeChan <- propose
+				}(desc.propose)
+			}
+		}
+		desc.msgs = nil
+		desc.stopChan = nil
+		desc.fastAndSlowAcks.Free()
+		r.freeDesc(desc)
+	})
+
+	r.keys = make(map[state.Key]keyInfo)
+	r.routineCount = 0
+	r.cmdDescs = cmap.New()
 	r.status = NORMAL
 	r.ballot = msg.Ballot
 	r.cballot = msg.Ballot
 	r.AQ = r.qs.AQ(r.ballot)
+	r.repchan = NewReplyChan(r)
+	r.historySize = 0
 	r.gc = NewGc(r)
+	mcollect := MCollect{
+		Replica: r.Id,
+		Ballot:  r.ballot,
+		Ids:     nil,
+	}
 	if r.recNum % 2 == 1 {
 		r.dl.Reinit(r)
 	} else {
 		r.dl = NewDelayLog(r)
 	}
 
-	r.stopDescs()
-	// clear cmdDescs:
-	r.cmdDescs.IterCb(func(cmdIdStr string, v interface{}) {
-		desc := v.(*commandDesc)
-		desc.msgs = nil
-		desc.stopChan = nil
-		desc.fastAndSlowAcks.Free()
-		r.freeDesc(desc)
+	i := 0
+	sorted := make([]CommandId, len(msg.Phases))
+	for cmdId := range msg.Phases {
+		sorted[i] = cmdId
+		i++
+	}
+	sort.Slice(sorted, func(i, j int) bool {
+		return msg.Deps[sorted[j]].Contains(sorted[i])
 	})
-	r.cmdDescs = cmap.New()
 
-	committed := make(map[CommandId]struct{})
-	clientCmds := make(map[int32]CommandId)
-
-	for cmdId, phase := range msg.Phases {
+	for _, cmdId := range sorted {
 		desc := r.getCmdDesc(cmdId, nil, nil)
 		if desc != nil {
-			desc.phase = phase
+			desc.phase = msg.Phases[cmdId]
 			desc.cmd = msg.Cmds[cmdId]
 			desc.dep = msg.Deps[cmdId]
 			desc.proposeDep = msg.Deps[cmdId]
 
-			if phase == COMMIT {
-				committed[cmdId] = struct{}{}
-			} else if phase != ACCEPT {
+			for _, cmdIdPrime := range msg.Deps[cmdId] {
+				descPrime := r.getCmdDesc(cmdIdPrime, nil, nil)
+				if descPrime != nil {
+					descPrime.successors = append(descPrime.successors, cmdId)
+				}
+				go func() {
+					r.deliverChan <- cmdIdPrime
+				}()
+			}
+
+			go func() {
+				r.deliverChan <- cmdId
+			}()
+
+			if desc.phase != COMMIT && desc.phase != ACCEPT {
 				desc.phase = ACCEPT
 			}
+		} else if !r.AQ.Contains(r.Id) {
+			mcollect.Ids = append(mcollect.Ids, cmdId)
 		}
 
 		if propose, exists := r.proposes[cmdId]; exists {
 			if desc != nil {
 				desc.propose = propose
 			}
-			oldCmdId, exists := clientCmds[cmdId.ClientId]
-			if !exists || oldCmdId.SeqNum < cmdId.SeqNum {
-				clientCmds[cmdId.ClientId] = cmdId
-			}
-		}
-	}
 
-	for _, cmdId := range clientCmds {
-		if r.AQ.Contains(r.Id) {
-			propose := r.proposes[cmdId]
-			lightSlowAck := &MLightSlowAck{
-				Replica: r.Id,
-				Ballot:  r.ballot,
-				CmdId:   cmdId,
+			if !r.AQ.Contains(r.Id) {
+				continue
 			}
-			if !r.optExec || r.Id == r.leader() {
-				r.batcher.SendLightSlowAck(lightSlowAck)
+
+			// TODO: what if !r.optExec ?
+			if r.Id == r.leader() {
+				fastAck := newFastAck()
+				fastAck.Replica = r.Id
+				fastAck.Ballot = r.ballot
+				fastAck.CmdId = cmdId
+				fastAck.Dep = msg.Deps[cmdId]
+				r.batcher.SendFastAck(copyFastAck(fastAck))
+				if desc != nil {
+					defer r.handleFastAck(fastAck, desc)
+				}
 				reply := &MReply{
 					Replica: r.Id,
 					Ballot:  r.ballot,
 					CmdId:   cmdId,
 					Dep:     msg.Deps[cmdId],
-					Rep:     state.NIL(),
 				}
 				r.sender.SendToClient(propose.ClientId, reply, r.cs.replyRPC)
 			} else {
+				lightSlowAck := &MLightSlowAck{
+					Replica: r.Id,
+					Ballot:  r.ballot,
+					CmdId:   cmdId,
+				}
 				r.batcher.SendLightSlowAckClient(lightSlowAck, propose.ClientId)
-			}
-			desc := r.getCmdDesc(cmdId, nil, nil)
-			if desc != nil {
-				defer r.handleLightSlowAck(lightSlowAck, desc)
+				if desc != nil {
+					defer r.handleLightSlowAck(lightSlowAck, desc)
+				}
 			}
 		}
 	}
 
-	go func() {
-		for committedCmdId := range committed {
-			r.deliverChan <- committedCmdId
-		}
-	}()
+	if mcollect.Ids != nil {
+		r.sender.SendToQuorum(r.AQ, &mcollect, r.cs.collectRPC)
+	}
+
+	r.sender.SendToAll(&r.dl.ping, r.cs.pingRPC)
 
 	log.Println("Recovered!")
 	log.Println("Ballot:", r.ballot)

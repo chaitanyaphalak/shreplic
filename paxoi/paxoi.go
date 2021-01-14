@@ -198,6 +198,7 @@ func (r *Replica) run() {
 	}
 
 	go r.WaitForClientConnections()
+	r.sender.SendToAll(&r.dl.ping, r.cs.pingRPC)
 
 	var cmdId CommandId
 	for !r.Shutdown {
@@ -206,7 +207,7 @@ func (r *Replica) run() {
 			if r.leader() != r.Id {
 				continue
 			}
-			fmt.Println("swap replicas", swap.oldFast, "and", swap.newFast)
+			log.Println("swap replicas", swap.oldFast, "and", swap.newFast)
 			newAQ := smr.NewQuorum(r.AQ.Size())
 			for rid := range r.AQ {
 				if rid == swap.oldFast {
@@ -272,28 +273,23 @@ func (r *Replica) run() {
 
 		case m := <-r.cs.fastAckChan:
 			fastAck := m.(*MFastAck)
-			r.dl.BTick(fastAck.Ballot, fastAck.Replica, true)
 			r.getCmdDesc(fastAck.CmdId, fastAck, nil)
 
 		case m := <-r.cs.slowAckChan:
 			slowAck := m.(*MSlowAck)
-			r.dl.BTick(slowAck.Ballot, slowAck.Replica, true)
 			r.getCmdDesc(slowAck.CmdId, slowAck, nil)
 
 		case m := <-r.cs.lightSlowAckChan:
 			lightSlowAck := m.(*MLightSlowAck)
-			r.dl.BTick(lightSlowAck.Ballot, lightSlowAck.Replica, true)
 			r.getCmdDesc(lightSlowAck.CmdId, lightSlowAck, nil)
 
 		case m := <-r.cs.acksChan:
 			acks := m.(*MAcks)
 			for _, f := range acks.FastAcks {
-				r.dl.BTick(f.Ballot, f.Replica, true)
 				r.getCmdDesc(f.CmdId, copyFastAck(&f), nil)
 			}
 			for _, s := range acks.LightSlowAcks {
 				ls := s
-				r.dl.BTick(ls.Ballot, ls.Replica, true)
 				r.getCmdDesc(s.CmdId, &ls, nil)
 			}
 
@@ -309,7 +305,6 @@ func (r *Replica) run() {
 				} else {
 					fastAck.Dep = nil
 				}
-				r.dl.BTick(optAcks.Ballot, optAcks.Replica, true)
 				r.getCmdDesc(fastAck.CmdId, fastAck, nil)
 			}
 
@@ -321,20 +316,23 @@ func (r *Replica) run() {
 			sync := m.(*MSync)
 			r.handleSync(sync)
 
-		case m := <-r.cs.flushChan:
-			flush := m.(*MFlush)
-			r.handleFlush(flush)
+		case m := <-r.cs.pingChan:
+			ping := m.(*MPing)
+			r.handlePing(ping)
+
+		case m := <-r.cs.pingRepChan:
+			pingRep := m.(*MPingRep)
+			r.handlePingRep(pingRep)
 
 		case m := <-r.cs.collectChan:
 			collect := m.(*MCollect)
-			r.dl.BTick(collect.Ballot, collect.Replica, false)
 			go r.handleCollect(collect)
 		}
 	}
 }
 
 func (r *Replica) handlePropose(msg *smr.GPropose, desc *commandDesc, cmdId CommandId) {
-	if r.status != NORMAL || desc.phase != START || desc.propose != nil {
+	if r.status != NORMAL || desc.propose != nil {
 		return
 	}
 
@@ -530,8 +528,23 @@ func (r *Replica) handleLightSlowAck(msg *MLightSlowAck, desc *commandDesc) {
 	r.commonCaseFastAck(fastAck, desc)
 }
 
-func (r *Replica) handleFlush(msg *MFlush) {
+func (r *Replica) handlePing(msg *MPing) {
+	if r.ballot == msg.Ballot {
+		r.sender.SendTo(msg.Replica, &MPingRep{
+			Replica: r.Id,
+			Ballot:  r.ballot,
+		}, r.cs.pingRepRPC)
+	}
+}
 
+func (r *Replica) handlePingRep(msg *MPingRep) {
+	if r.ballot == msg.Ballot {
+		r.dl.BTick(msg.Ballot, msg.Replica, r.AQ.Contains(msg.Replica))
+		go func() {
+			time.Sleep(PING_DELAY)
+			r.sender.SendTo(msg.Replica, &r.dl.ping, r.cs.pingRPC)
+		}()
+	}
 }
 
 func (r *Replica) handleCollect(msg *MCollect) {
@@ -565,10 +578,6 @@ func (r *Replica) deliver(desc *commandDesc, cmdId CommandId) {
 	}
 
 	r.delivered.Set(cmdId.String(), struct{}{})
-
-	if isNoop(desc.cmd) {
-		return
-	}
 
 	dlog.Printf("Executing " + desc.cmd.String())
 	v := desc.cmd.Execute(r.State)
@@ -669,6 +678,10 @@ func (r *Replica) newDesc() *commandDesc {
 	desc.dep = nil
 	if desc.msgs == nil {
 		desc.msgs = make(chan interface{}, 8)
+	} else {
+		for len(desc.msgs) != 0 {
+			<-desc.msgs
+		}
 	}
 	desc.active = true
 	desc.phase = START
@@ -680,6 +693,10 @@ func (r *Replica) newDesc() *commandDesc {
 	desc.proposeDep = nil
 	if desc.stopChan == nil {
 		desc.stopChan = make(chan *sync.WaitGroup, 8)
+	} else {
+		for len(desc.stopChan) != 0 {
+			<-desc.stopChan
+		}
 	}
 
 	desc.afterPropagate = desc.afterPropagate.ReinitCondF(func() bool {
@@ -807,6 +824,17 @@ func (r *Replica) getDep(cmd state.Command) Dep {
 	}
 
 	return dep
+}
+
+func (r *Replica) updateInfo(cmd state.Command, cmdId CommandId) {
+	for _, key := range keysOf(cmd) {
+		info, exists := r.keys[key]
+		if !exists {
+			info = newLightKeyInfo()
+			r.keys[key] = info
+		}
+		info.add(cmd, cmdId)
+	}
 }
 
 func (r *Replica) getDepAndUpdateInfo(cmd state.Command, cmdId CommandId) Dep {

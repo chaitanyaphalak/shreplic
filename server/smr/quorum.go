@@ -237,7 +237,7 @@ func (qs QuorumSet) AQ(ballot int32) Quorum {
 func (qs QuorumSet) BallotOf(leader int32, q Quorum) int32 {
 	for qid, qj := range qs[leader] {
 		if qj.Equals(q) {
-			return qid * int32(len(qs))
+			return qid * int32(len(qs)) + leader
 		}
 	}
 	return -1

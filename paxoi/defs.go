@@ -40,6 +40,15 @@ func (cmdId CommandId) String() string {
 
 type Dep []CommandId
 
+func (d Dep) Contains(cmdId CommandId) bool {
+	for _, c := range d {
+		if c == cmdId {
+			return true
+		}
+	}
+	return false
+}
+
 func NilDepOfCmdId(cmdId CommandId) Dep {
 	return []CommandId{cmdId}
 }
@@ -146,7 +155,8 @@ type CommunicationSupply struct {
 	newLeaderAckChan chan fastrpc.Serializable
 	shareStateChan   chan fastrpc.Serializable
 	syncChan         chan fastrpc.Serializable
-	flushChan        chan fastrpc.Serializable
+	pingChan         chan fastrpc.Serializable
+	pingRepChan      chan fastrpc.Serializable
 	collectChan      chan fastrpc.Serializable
 
 	fastAckRPC      uint8
@@ -160,7 +170,8 @@ type CommunicationSupply struct {
 	newLeaderAckRPC uint8
 	shareStateRPC   uint8
 	syncRPC         uint8
-	flushRPC        uint8
+	pingRPC         uint8
+	pingRepRPC      uint8
 	collectRPC      uint8
 }
 
@@ -178,7 +189,8 @@ func initCs(cs *CommunicationSupply, t *fastrpc.Table) {
 	cs.newLeaderAckChan = make(chan fastrpc.Serializable, smr.CHAN_BUFFER_SIZE)
 	cs.shareStateChan = make(chan fastrpc.Serializable, smr.CHAN_BUFFER_SIZE)
 	cs.syncChan = make(chan fastrpc.Serializable, smr.CHAN_BUFFER_SIZE)
-	cs.flushChan = make(chan fastrpc.Serializable, smr.CHAN_BUFFER_SIZE)
+	cs.pingChan = make(chan fastrpc.Serializable, smr.CHAN_BUFFER_SIZE)
+	cs.pingRepChan = make(chan fastrpc.Serializable, smr.CHAN_BUFFER_SIZE)
 	cs.collectChan = make(chan fastrpc.Serializable, smr.CHAN_BUFFER_SIZE)
 
 	cs.fastAckRPC = t.Register(new(MFastAck), cs.fastAckChan)
@@ -192,7 +204,8 @@ func initCs(cs *CommunicationSupply, t *fastrpc.Table) {
 	cs.newLeaderAckRPC = t.Register(new(MNewLeaderAck), cs.newLeaderAckChan)
 	cs.shareStateRPC = t.Register(new(MShareState), cs.shareStateChan)
 	cs.syncRPC = t.Register(new(MSync), cs.syncChan)
-	cs.flushRPC = t.Register(new(MFlush), cs.flushChan)
+	cs.pingRPC = t.Register(new(MPing), cs.pingChan)
+	cs.pingRepRPC = t.Register(new(MPingRep), cs.pingRepChan)
 	cs.collectRPC = t.Register(new(MCollect), cs.collectChan)
 }
 

@@ -7,7 +7,7 @@ import (
 	"github.com/vonaka/shreplic/server/smr"
 )
 
-const COLLECT_SIZE = 2000
+const COLLECT_SIZE = 1000
 
 type gc struct {
 	trash  chan int
@@ -105,7 +105,7 @@ func (g *gc) Record(cmdId CommandId, slot int) {
 			if cmdSlot.historyIndex == -1 && slot != -1 {
 				cmdSlot.historyIndex = slot
 			}
-			if cmdSlot.ackNum == g.ackNum {
+			if cmdSlot.ackNum >= g.ackNum {
 				g.trash <- cmdSlot.historyIndex
 			}
 			return cmdSlot

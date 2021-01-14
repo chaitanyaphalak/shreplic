@@ -15,6 +15,8 @@ type replyArgs struct {
 
 type replyChan struct {
 	rep      *smr.ProposeReplyTS
+	ok       chan struct{}
+	exit     chan struct{}
 	args     chan *replyArgs
 	readArgs chan *replyArgs
 }
@@ -24,6 +26,8 @@ func NewReplyChan(r *Replica) *replyChan {
 		rep: &smr.ProposeReplyTS{
 			OK: smr.TRUE,
 		},
+		ok:       make(chan struct{}, 1),
+		exit:     make(chan struct{}, 2),
 		args:     make(chan *replyArgs, smr.CHAN_BUFFER_SIZE),
 		readArgs: make(chan *replyArgs, smr.CHAN_BUFFER_SIZE),
 	}
@@ -31,6 +35,9 @@ func NewReplyChan(r *Replica) *replyChan {
 	go func() {
 		for !r.Shutdown {
 			select {
+			case <-rc.exit:
+				rc.ok <- struct{}{}
+				return
 			case args := <-rc.args:
 				if args.propose.Collocated && !r.optExec {
 					rc.rep.CommandId = args.propose.CommandId
@@ -64,6 +71,11 @@ func NewReplyChan(r *Replica) *replyChan {
 	}()
 
 	return rc
+}
+
+func (r *replyChan) stop() {
+	r.exit <- struct{}{}
+	<-r.ok
 }
 
 func (r *replyChan) reply(desc *commandDesc, cmdId CommandId, val state.Value) {
