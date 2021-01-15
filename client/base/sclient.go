@@ -2,8 +2,6 @@ package base
 
 import (
 	"errors"
-	"fmt"
-	"io"
 	"log"
 	"math/rand"
 	"time"
@@ -23,7 +21,6 @@ type SimpleClient struct {
 	writes   int
 	psize    int
 	conflict int
-	writer   io.Writer
 }
 
 func NewSimpleClient(maddr, collocated string,
@@ -41,7 +38,6 @@ func NewSimpleClient(maddr, collocated string,
 		psize:    psize,
 		conflict: conflict,
 	}
-	sc.writer = sc.Logger.Writer()
 	sc.Collocated(collocated)
 	return sc
 }
@@ -189,12 +185,12 @@ func (c *SimpleClient) run(connect bool) error {
 
 		if i != 0 {
 			duration := after.Sub(before)
-			fmt.Fprintf(c.writer, "latency %v\n", to_ms(duration.Nanoseconds()))
-			fmt.Fprintf(c.writer, "chain %d-1\n", int64(to_ms(after.UnixNano())))
+			c.Printf("latency %v\n", to_ms(duration.Nanoseconds()))
+			c.Printf("chain %d-1\n", int64(to_ms(after.UnixNano())))
 		}
 	}
 	afterTotal := time.Now()
-	fmt.Fprintf(c.writer, "Test took %v\n", afterTotal.Sub(beforeTotal))
+	c.Printf("Test took %v\n", afterTotal.Sub(beforeTotal))
 	c.Disconnect()
 	return nil
 }
