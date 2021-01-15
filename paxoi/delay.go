@@ -3,8 +3,8 @@ package paxoi
 import "time"
 
 const (
-	BAD_CONT  = 3
-	THRESHOLD = time.Duration(210 * time.Millisecond)
+	BAD_CONT   = 3
+	THRESHOLD  = time.Duration(210 * time.Millisecond)
 	PING_DELAY = time.Duration(10 * time.Millisecond)
 )
 
@@ -66,7 +66,7 @@ func (dl *DelayLog) Tick(id int32, fast bool) int32 {
 	d := now.Sub(dl.log[i].now)
 	dl.log[i].now = now
 
-	if d > THRESHOLD + PING_DELAY {
+	if d > THRESHOLD+PING_DELAY {
 		dl.log[i].badCount++
 	} else if dl.log[i].badCount > 0 {
 		dl.log[i].badCount--

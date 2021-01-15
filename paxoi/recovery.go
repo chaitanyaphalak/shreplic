@@ -234,7 +234,7 @@ func (r *Replica) handleSync(msg *MSync) {
 		Ballot:  r.ballot,
 		Ids:     nil,
 	}
-	if r.recNum % 2 == 1 {
+	if r.recNum%2 == 1 {
 		r.dl.Reinit(r)
 	} else {
 		r.dl = NewDelayLog(r)
