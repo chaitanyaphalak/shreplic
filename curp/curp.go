@@ -39,8 +39,6 @@ type Replica struct {
 	sender  smr.Sender
 	history []commandStaticDesc
 
-	AQ smr.Quorum
-	qs smr.QuorumSet
 	cs CommunicationSupply
 
 	deliverChan chan int
@@ -117,7 +115,6 @@ func NewReplica(rid int, addrs []string, exec, dr bool,
 
 	r.Q = smr.NewMajorityOf(r.N)
 	r.sender = smr.NewSender(r.Replica)
-	r.qs = smr.NewQuorumSet(r.N/2+1, r.N)
 
 	_, leaderIds, err := smr.NewQuorumsFromFile(qfile, r.Replica)
 	if err == nil && len(leaderIds) != 0 {

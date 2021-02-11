@@ -217,6 +217,7 @@ func (r *Replica) run() {
 				}
 			}
 			r.recover <- r.qs.BallotOf(r.Id, newAQ)
+
 		case newBallot := <-r.recover:
 			newLeader := &MNewLeader{
 				Replica: r.Id,
